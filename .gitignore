@@ -1,0 +1,2 @@
+# Ignore the Python virtual environment
+/python_microservice/venv/

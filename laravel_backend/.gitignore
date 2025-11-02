@@ -1,0 +1,17 @@
+# Laravel's standard gitignore
+/node_modules/
+/public/build/
+/public/hot
+/public/storage
+/storage/*.key
+/storage/app/public/
+/vendor/
+/.env
+/.env.backup
+/.env.production
+/.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+composer.lock
+npm-debug.log
+yarn-error.log

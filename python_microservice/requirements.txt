@@ -1,0 +1,5 @@
+# path: python_microservice/requirements.txt
+flask
+deepface
+numpy
+gunicorn
