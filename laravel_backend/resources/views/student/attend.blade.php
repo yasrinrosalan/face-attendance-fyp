@@ -16,11 +16,16 @@
                     </div>
 
                     <div id="webcam-container" style="display: none;">
-                        <p>Please look directly at the camera to verify your identity.</p>
-                        <video id="webcam" autoplay muted playsinline
-                            class="img-fluid rounded border border-secondary"></video>
+                        <video id="webcam" autoplay muted playsinline class="img-fluid rounded border border-secondary"
+                            style="transform: scaleX(-1);"></video>
                         <canvas id="canvas" class="d-none"></canvas>
-                        <button id="capture-btn" class="btn btn-primary btn-lg mt-3">Verify My Face</button>
+
+                        <p class="fs-5 mt-3" id="instruction">Please look directly at the camera to verify your identity.
+                        </p>
+
+                        <button id="capture-btn" class="btn btn-primary btn-lg mt-2">
+                            Verify My Face
+                        </button>
                     </div>
 
                     <div id="status" class="mt-3"></div>
@@ -32,15 +37,17 @@
 
 @push('scripts')
     <script>
-        // This JS is identical
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('canvas');
         const captureBtn = document.getElementById('capture-btn');
         const statusDiv = document.getElementById('status');
         const loadingDiv = document.getElementById('loading');
         const webcamContainer = document.getElementById('webcam-container');
+
         const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         const referralCode = "{{ $session->referral_code }}";
+        const attendanceToken = "{{ $attendance_token }}";
+        const ATTENDANCE_URL = "{{ route('student.mark.attendance') }}";
 
         async function startWebcam() {
             loadingDiv.style.display = 'block';
@@ -56,10 +63,6 @@
                 video.srcObject = stream;
                 loadingDiv.style.display = 'none';
                 webcamContainer.style.display = 'block';
-                video.addEventListener('loadedmetadata', () => {
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                });
             } catch (err) {
                 console.error("Error accessing webcam:", err);
                 loadingDiv.style.display = 'none';
@@ -73,11 +76,13 @@
             captureBtn.disabled = true;
 
             const context = canvas.getContext('2d');
+            // We draw the image normally (not mirrored) for the server,
+            // so the AI sees your face correctly.
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
             const imageBase64 = canvas.toDataURL('image/jpeg', 0.9);
 
             try {
-                const response = await fetch("{{ route('student.mark.attendance') }}", {
+                const response = await fetch(ATTENDANCE_URL, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -85,7 +90,8 @@
                     },
                     body: JSON.stringify({
                         image: imageBase64,
-                        referral_code: referralCode
+                        referral_code: referralCode,
+                        _token: attendanceToken
                     })
                 });
 
@@ -101,9 +107,14 @@
                     statusDiv.innerHTML = `<div class="alert alert-danger">${data.message} Please try again.</div>`;
                     captureBtn.disabled = false;
                 }
+
             } catch (err) {
-                console.error("Error sending image:", err);
-                statusDiv.innerHTML = `<div class="alert alert-danger">An error occurred. Please try again.</div>`;
+                console.error("Error:", err);
+                if (err.response && err.response.status === 419) {
+                    statusDiv.innerHTML = `<div class="alert alert-danger">Session expired. Please reload.</div>`;
+                } else {
+                    statusDiv.innerHTML = `<div class="alert alert-danger">An error occurred. Please try again.</div>`;
+                }
                 captureBtn.disabled = false;
             }
         }

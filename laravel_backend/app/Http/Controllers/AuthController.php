@@ -21,6 +21,7 @@ class AuthController extends Controller
         // Validation
         $request->validate([
             'name' => 'required|string|max:255',
+            'student_id' => 'required|string|max:20|unique:users',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
         ]);
@@ -28,15 +29,15 @@ class AuthController extends Controller
         // Create the user
         $user = User::create([
             'name' => $request->name,
+            'student_id' => $request->student_id,
             'email' => $request->email,
             'password' => Hash::make($request->password),
-            'role' => 'student', // All registrations are for students
+            'role' => 'student',
         ]);
 
         // Log the user in
         Auth::login($user);
 
-        // Redirect to the student dashboard
         return redirect('/student/dashboard')->with('success', 'Registration successful!');
     }
 
@@ -48,37 +49,22 @@ class AuthController extends Controller
 
     public function login(Request $request)
     {
-        // Validation
         $credentials = $request->validate([
             'email' => 'required|email',
             'password' => 'required',
         ]);
 
-        // Try to log in
         if (Auth::attempt($credentials)) {
             $request->session()->regenerate();
             $user = Auth::user();
 
-            // --- THIS IS THE CORRECTED LOGIC ---
-            // Check for Admin first
-            if ($user->isAdmin()) {
-                return redirect()->intended('/admin/dashboard');
-            }
-            // Check for Lecturer
-            if ($user->isLecturer()) {
-                return redirect()->intended('/lecturer/dashboard');
-            }
-            // Default to Student
-            if ($user->isStudent()) {
-                return redirect()->intended('/student/dashboard');
-            }
-            // --- END CORRECTION ---
+            if ($user->isAdmin()) return redirect()->intended('/admin/dashboard');
+            if ($user->isLecturer()) return redirect()->intended('/lecturer/dashboard');
+            if ($user->isStudent()) return redirect()->intended('/student/dashboard');
 
-            // Fallback just in case
             return redirect('/');
         }
 
-        // If login fails
         return back()->withErrors([
             'email' => 'The provided credentials do not match our records.',
         ])->onlyInput('email');
@@ -90,29 +76,20 @@ class AuthController extends Controller
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
-        return redirect('/')->with('success', 'You have been logged out.');
+
+        // --- MODIFIED: Removed ->with('success', ...) ---
+        return redirect('/');
     }
 
-    /**
-     * Allow an impersonating admin to return to their account.
-     */
+    // --- Return to Admin ---
     public function returnToAdmin()
     {
-        // Check if admin_impersonating_id exists in session
         if (session()->has('admin_impersonating_id')) {
             $admin_id = session('admin_impersonating_id');
-
-            // Remove it from session
             session()->forget('admin_impersonating_id');
-
-            // Log the original admin back in
             Auth::login(User::find($admin_id));
-
-            // Redirect to admin dashboard
             return redirect()->route('admin.dashboard')->with('success', 'Welcome back, Admin!');
         }
-
-        // If not impersonating, just redirect
         return redirect('/');
     }
 }

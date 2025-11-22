@@ -9,28 +9,60 @@ use App\Models\AttendanceSession;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Hash; // <-- ADD THIS
 
 class AdminController extends Controller
 {
-    /**
-     * Show the main admin dashboard with all users and sessions.
-     */
-    public function dashboard()
+    public function dashboard(Request $request) // <-- Inject Request
     {
-        $users = User::orderBy('requesting_face_change', 'desc') // <-- Show requests at the top
-            ->orderBy('role')->orderBy('name')
-            ->paginate(15, ['*'], 'users_page');
+        $users = User::orderBy('created_at', 'desc')
+            ->paginate(6, ['*'], 'users_page');
 
         $sessions = AttendanceSession::with('course', 'course.lecturer', 'attendance_records')
             ->orderBy('starts_at', 'desc')
-            ->paginate(15, ['*'], 'sessions_page');
+            ->paginate(6, ['*'], 'sessions_page');
+
+        // --- NEW LOGIC: Handle AJAX Requests ---
+        if ($request->ajax()) {
+            // If the request has 'users_page', refresh the users table
+            if ($request->has('users_page')) {
+                return view('admin.partials.users_table', compact('users', 'sessions'))->render();
+            }
+            // If the request has 'sessions_page', refresh the sessions table
+            if ($request->has('sessions_page')) {
+                return view('admin.partials.sessions_table', compact('users', 'sessions'))->render();
+            }
+        }
+        // --- END NEW LOGIC ---
 
         return view('admin.dashboard', compact('users', 'sessions'));
     }
 
-    /**
-     * Delete a user account (student or lecturer).
-     */
+    // --- NEW METHOD: CREATE USER ---
+    public function createUser(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|string|min:6',
+            'role' => 'required|in:lecturer,student',
+            // Student ID is required only if role is student
+            'student_id' => 'nullable|required_if:role,student|string|unique:users,student_id',
+        ]);
+
+        User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'role' => $request->role,
+            'student_id' => $request->student_id,
+        ]);
+
+        return back()->with('success', 'New ' . ucfirst($request->role) . ' account created successfully.');
+    }
+    // --- END NEW METHOD ---
+
     public function deleteUser(User $user)
     {
         if ($user->id === Auth::id()) {
@@ -42,21 +74,15 @@ class AdminController extends Controller
         }
 
         $user->delete();
-        return back()->with('success', 'User account ' . $user->email . ' deleted.');
+        return back()->with('success', 'User account deleted.');
     }
 
-    /**
-     * Delete any attendance session.
-     */
     public function deleteSession(AttendanceSession $session)
     {
         $session->delete();
         return back()->with('success', 'Attendance session deleted.');
     }
 
-    /**
-     * "Login As" feature to impersonate another user for debugging.
-     */
     public function loginAs(User $user)
     {
         session(['admin_impersonating_id' => Auth::id()]);
@@ -68,11 +94,6 @@ class AdminController extends Controller
         return redirect('/')->with('success', 'Impersonating ' . $user->name);
     }
 
-
-    /**
-     * Manually deletes a student's face enrollment to allow re-enrollment.
-     * --- MODIFIED ---
-     */
     public function deleteEnrollment(User $user)
     {
         if (!$user->isStudent() || !$user->face_template_path) {
@@ -80,47 +101,51 @@ class AdminController extends Controller
         }
 
         try {
-            // Call the cleanup helper
             $this->cleanupFaceData($user);
 
-            // --- MODIFIED BLOCK ---
-            // Update the user's record in the database
             $user->face_template_path = null;
-            $user->requesting_face_change = false; // <-- Reset the request flag
+            $user->requesting_face_change = false;
             $user->save();
-            // --- END MODIFIED BLOCK ---
 
-            $message = $user->requesting_face_change
-                ? 'Request for ' . $user->name . ' accepted. They can now re-enroll.'
-                : 'Successfully deleted enrollment for ' . $user->name . '. They can now enroll again.';
-
-            return back()->with('success', $message);
+            return back()->with('success', 'Enrollment reset successfully.');
 
         } catch (\Exception $e) {
             return back()->with('error', 'Error deleting enrollment: ' . $e->getMessage());
         }
     }
 
-    /**
-     * Private function to delete face files from the python service.
-     */
     private function cleanupFaceData(User $user)
     {
-        $faceDataDir = realpath(base_path('../python_microservice/face_data'));
+        try {
+            $pythonServiceUrl = env('PYTHON_SERVICE_URL', 'http://127.0.0.1:5000');
 
-        if(!$faceDataDir || !File::isDirectory($faceDataDir)) {
-            Log::error("Face data directory not found at: " . base_path('../python_microservice/face_data'));
-            return;
-        }
+            Http::timeout(5)->post("{$pythonServiceUrl}/delete_enrollment", [
+                'student_id' => $user->id,
+            ]);
 
-        $studentFaceDir = $faceDataDir . '/student_' . $user->id;
-        if (File::isDirectory($studentFaceDir)) {
-            File::deleteDirectory($studentFaceDir);
+        } catch (\Exception $e) {
+            Log::error("Failed to call /delete_enrollment endpoint: " . $e->getMessage());
         }
+    }
 
-        $pickleFile = $faceDataDir . '/representations_vgg_face.pkl';
-        if(File::exists($pickleFile)) {
-            File::delete($pickleFile);
-        }
+    // Show all reports
+    public function showReports()
+    {
+        $reports = \App\Models\IssueReport::with('user')
+            ->orderBy('status', 'asc') // Pending first
+            ->orderBy('created_at', 'desc')
+            ->paginate(10);
+
+        return view('admin.reports', compact('reports'));
+    }
+
+    // Mark as resolved
+    public function resolveReport($id)
+    {
+        $report = \App\Models\IssueReport::findOrFail($id);
+        $report->status = 'resolved';
+        $report->save();
+
+        return back()->with('success', 'Issue marked as resolved.');
     }
 }

@@ -7,13 +7,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Course;
 use App\Models\AttendanceSession;
-use Illuminate\Support\Str; // Import the String helper
 
 class LecturerController extends Controller
 {
     public function dashboard()
     {
         $lecturer = Auth::user();
+        // This ALREADY filters courses by the logged-in lecturer
         $courses = $lecturer->courses_lecturer_teaches()->with('attendance_sessions')->get();
 
         return view('lecturer.dashboard', [
@@ -22,11 +22,28 @@ class LecturerController extends Controller
         ]);
     }
 
-    /**
-     * Create a new attendance session (the "link")
-     */
+    // --- NEW METHOD: CREATE COURSE ---
+    public function createCourse(Request $request)
+    {
+        $request->validate([
+            'course_name' => 'required|string|max:255',
+            'course_code' => 'required|string|max:20', // Removed 'unique' to allow different lecturers to teach same subject code if needed, or keep unique if strict.
+        ]);
+
+        Course::create([
+            'course_name' => $request->course_name,
+            'course_code' => $request->course_code,
+            'lecturer_id' => Auth::id(), // <--- THIS BINDS IT TO THE ACCOUNT
+        ]);
+
+        return redirect()->back()->with('success', 'New course added successfully!');
+    }
+    // --- END NEW METHOD ---
+
+    // ... (createSession and deleteSession methods remain unchanged) ...
     public function createSession(Request $request)
     {
+        // ... existing code ...
         $request->validate([
             'course_id' => 'required|exists:courses,id',
             'session_title' => 'required|string|max:255',
@@ -41,45 +58,21 @@ class LecturerController extends Controller
             return back()->with('error', 'You do not own this course.');
         }
 
-        // --- Generate a Unique Referral Code ---
+        // ... generate code ...
         $code = null;
         do {
-            // Generate a simple 6-character uppercase code (e.g., A7B2N9)
-            $code = Str::upper(Str::random(6));
-            // Check if this code already exists in the table
+            $code = \Illuminate\Support\Str::upper(\Illuminate\Support\Str::random(6));
         } while (AttendanceSession::where('referral_code', $code)->exists());
-        // --- End Code Generation ---
 
         AttendanceSession::create([
             'course_id' => $request->course_id,
             'session_title' => $request->session_title,
             'starts_at' => $request->starts_at,
             'ends_at' => $request->ends_at,
-            'referral_code' => $code, // Save the new code
+            'referral_code' => $code,
         ]);
 
         return redirect('/lecturer/dashboard')->with('success', 'Attendance session created!');
-    }
-
-    /**
-     * --- NEW METHOD ---
-     * Show the details (QR Code, Code) for a specific session.
-     * This is the page the lecturer projects in the classroom.
-     */
-    public function showSession(AttendanceSession $session)
-    {
-        // Security Check: Does the logged-in lecturer own this course?
-        if ($session->course->lecturer_id !== Auth::id()) {
-            return redirect('/lecturer/dashboard')->with('error', 'You do not have permission to view this.');
-        }
-
-        // Generate the URL the QR code will point to
-        $attendance_url = route('student.attend.form', $session->referral_code);
-
-        return view('lecturer.show_session', [
-            'session' => $session,
-            'attendance_url' => $attendance_url
-        ]);
     }
 
     public function deleteSession(AttendanceSession $session)
@@ -87,9 +80,22 @@ class LecturerController extends Controller
         if ($session->course->lecturer_id !== Auth::id()) {
             return back()->with('error', 'You do not have permission to delete this.');
         }
-
         $session->delete();
-        // Redirect to the show_session page's referrer (the dashboard)
         return redirect()->route('lecturer.dashboard')->with('success', 'Session deleted.');
+    }
+
+    // ... (showSession method unchanged) ...
+    public function showSession(AttendanceSession $session)
+    {
+        if ($session->course->lecturer_id !== Auth::id()) {
+            return redirect('/lecturer/dashboard')->with('error', 'You do not have permission to view this.');
+        }
+
+        $attendance_url = route('student.attend.form', $session->referral_code);
+
+        return view('lecturer.show_session', [
+            'session' => $session,
+            'attendance_url' => $attendance_url
+        ]);
     }
 }

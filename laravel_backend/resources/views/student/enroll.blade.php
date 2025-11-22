@@ -3,19 +3,44 @@
 @section('content')
     <div class="row justify-content-center">
         <div class="col-md-8">
-            <div class="card">
-                <div class="card-header fs-4">Face Enrollment</div>
-                <div class="card-body text-center">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom-0 pt-4 text-center">
+                    <h4 class="fw-bold text-primary"><i class="fas fa-camera me-2"></i>Face Enrollment</h4>
+                    <p class="text-muted small">Please ensure good lighting and look directly at the camera.</p>
+                </div>
+                <div class="card-body text-center p-4">
+
+                    <div
+                        class="alert alert-info border-0 d-flex align-items-center justify-content-center mb-4 bg-light-info">
+                        <div class="text-start small">
+                            <ul class="mb-0 ps-3">
+                                <li><i class="fas fa-lightbulb text-warning me-1"></i> Ensure your face is evenly lit (no
+                                    backlighting).</li>
+                                <li><i class="fas fa-user text-primary me-1"></i> Look straight at the camera.</li>
+                                <li><i class="fas fa-glasses text-dark me-1"></i> Remove glasses if they reflect glare.</li>
+                            </ul>
+                        </div>
+                    </div>
 
                     <div id="loading" style="display: none;">
                         <p>Starting camera...</p>
                     </div>
 
                     <div id="webcam-container" style="display: none;">
-                        <p>Please look directly at the camera and hold still.</p>
-                        <video id="webcam" autoplay muted playsinline class="img-fluid rounded"></video>
+                        <div class="position-relative d-inline-block">
+                            <video id="webcam" autoplay muted playsinline
+                                class="img-fluid rounded-3 border border-primary shadow-sm"
+                                style="max-height: 400px; transform: scaleX(-1);"></video>
+                            <div class="position-absolute top-50 start-50 translate-middle border border-white border-2 rounded-3"
+                                style="width: 200px; height: 250px; opacity: 0.5; pointer-events: none;"></div>
+                        </div>
                         <canvas id="canvas" class="d-none"></canvas>
-                        <button id="capture-btn" class="btn btn-primary btn-lg mt-3">Capture & Enroll Face</button>
+
+                        <div class="mt-4">
+                            <button id="capture-btn" class="btn btn-primary btn-lg px-5 shadow-sm fw-bold">
+                                <i class="fas fa-camera me-2"></i>Capture & Enroll
+                            </button>
+                        </div>
                     </div>
 
                     <div id="status" class="mt-3"></div>
@@ -23,11 +48,17 @@
             </div>
         </div>
     </div>
+
+    <style>
+        .bg-light-info {
+            background-color: #e0f2f1;
+            color: #00695c;
+        }
+    </style>
 @endsection
 
 @push('scripts')
     <script>
-        // Get all the HTML elements we need
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('canvas');
         const captureBtn = document.getElementById('capture-btn');
@@ -35,63 +66,57 @@
         const loadingDiv = document.getElementById('loading');
         const webcamContainer = document.getElementById('webcam-container');
 
-        // Get the CSRF token from the meta tag
         const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        const ENROLL_URL = "{{ route('student.enroll.face') }}";
 
-        // Function to start the webcam
         async function startWebcam() {
             loadingDiv.style.display = 'block';
             statusDiv.innerHTML = '';
             try {
-                // Request access to the user's camera
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: {
-                        width: 640,
-                        height: 480
+                        width: {
+                            ideal: 1280
+                        },
+                        height: {
+                            ideal: 720
+                        },
+                        facingMode: "user"
                     },
                     audio: false
                 });
-
-                // If successful, show the video stream
                 video.srcObject = stream;
-                loadingDiv.style.display = 'none';
-                webcamContainer.style.display = 'block';
 
-                // Set canvas dimensions to match video
-                video.addEventListener('loadedmetadata', () => {
+                video.onloadedmetadata = () => {
+                    loadingDiv.style.display = 'none';
+                    webcamContainer.style.display = 'block';
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
-                });
+                };
             } catch (err) {
-                // Handle errors (e.g., user denies camera access)
                 console.error("Error accessing webcam:", err);
                 loadingDiv.style.display = 'none';
                 statusDiv.innerHTML =
-                    `<div class="alert alert-danger">Error: Could not access webcam. Please allow camera permissions.</div>`;
+                    `<div class="alert alert-danger"><i class="fas fa-video-slash me-2"></i>Error: Could not access webcam. Check permissions.</div>`;
             }
         }
 
-        // Function to capture a photo and send it to the server
         async function captureAndEnroll() {
-            // 1. Update UI to show processing
-            statusDiv.innerHTML = `<div class="alert alert-info">Processing... Please wait.</div>`;
+            // Disable button during processing
             captureBtn.disabled = true;
+            captureBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Processing...`;
+            statusDiv.innerHTML = '';
 
-            // 2. Draw the current video frame onto the hidden canvas
             const context = canvas.getContext('2d');
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            // 3. Get the image from the canvas as a Base64 data URL
-            // format: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ..."
-            const imageBase64 = canvas.toDataURL('image/jpeg', 0.9); // 90% quality
+            const imageBase64 = canvas.toDataURL('image/jpeg', 0.95); // High quality
 
             try {
-                // 4. Send the image to our Laravel backend
-                const response = await fetch("{{ route('student.enroll.face') }}", {
+                const response = await fetch(ENROLL_URL, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': csrfToken // Include the CSRF token
+                        'X-CSRF-TOKEN': csrfToken
                     },
                     body: JSON.stringify({
                         image: imageBase64
@@ -100,31 +125,32 @@
 
                 const data = await response.json();
 
-                // 5. Handle the response from the server
                 if (data.success) {
                     statusDiv.innerHTML =
-                        `<div class="alert alert-success">${data.message} You will be redirected.</div>`;
-                    // Redirect to dashboard after 2 seconds
+                        `<div class="alert alert-success shadow-sm"><i class="fas fa-check-circle me-2"></i>${data.message} Redirecting...</div>`;
                     setTimeout(() => {
                         window.location.href = "{{ route('student.dashboard') }}";
                     }, 2000);
                 } else {
-                    statusDiv.innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
-                    captureBtn.disabled = false;
+                    // Show the specific error from Python (e.g., "Too dark")
+                    statusDiv.innerHTML =
+                        `<div class="alert alert-warning shadow-sm"><i class="fas fa-exclamation-circle me-2"></i>${data.message}</div>`;
+                    resetButton();
                 }
             } catch (err) {
                 console.error("Error sending image:", err);
-                statusDiv.innerHTML = `<div class="alert alert-danger">An error occurred. Please try again.</div>`;
-                captureBtn.disabled = false;
+                statusDiv.innerHTML =
+                    `<div class="alert alert-danger shadow-sm"><i class="fas fa-times-circle me-2"></i>Network error. Please try again.</div>`;
+                resetButton();
             }
         }
 
-        // --- Event Listeners ---
+        function resetButton() {
+            captureBtn.disabled = false;
+            captureBtn.innerHTML = `<i class="fas fa-camera me-2"></i>Capture & Enroll`;
+        }
 
-        // Start the webcam when the page loads
         startWebcam();
-
-        // Add click event to the capture button
         captureBtn.addEventListener('click', captureAndEnroll);
     </script>
 @endpush

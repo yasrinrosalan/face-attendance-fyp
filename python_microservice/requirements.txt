@@ -3,3 +3,5 @@ flask
 deepface
 numpy
 gunicorn
+scipy  # <-- ADD THIS LINE
+tf-keras # (You should already have this from before)

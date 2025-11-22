@@ -8,21 +8,21 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\Course;
 use App\Models\AttendanceSession;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon; // <-- ADD THIS IMPORT for date handling
-use DatePeriod;    // <-- ADD THIS IMPORT
-use DateInterval;  // <-- ADD THIS IMPORT
+use Carbon\Carbon;
+use DatePeriod;
+use DateInterval;
+use Illuminate\Support\Str; // <-- ADD THIS IMPORT for generating the token
 
 class StudentController extends Controller
 {
     /**
      * Show the student's main page.
-     * --- MODIFIED ---
      */
     public function dashboard()
     {
         $student = Auth::user();
 
-        // --- 1. GET ATTENDANCE STATISTICS (existing code) ---
+        // --- 1. GET ATTENDANCE STATISTICS ---
         $records = $student->attendance_records()
                           ->with('attendance_session.course')
                           ->orderBy('attended_at', 'desc')
@@ -31,36 +31,28 @@ class StudentController extends Controller
         $groupedRecords = $records->groupBy('attendance_session.course.course_name');
         $totalAttended = $records->count();
 
-        // --- 2. NEW: PREPARE DATA FOR CALENDAR ---
-
-        // Get all attended dates in 'Y-m-d' format and flip for fast lookups
+        // --- 2. PREPARE DATA FOR CALENDAR ---
         $attendedDates = $records->pluck('attended_at')->map(function ($date) {
             return $date->format('Y-m-d');
         })->flip();
 
-        // Get all data needed to build a one-month calendar
         $today = Carbon::today();
-        // Get the first day of the month, then go to the first day of that week (e.g., Sunday)
         $calendarStartDate = $today->copy()->startOfMonth()->startOfWeek(Carbon::SUNDAY);
-        // Get the last day of the month, then go to the last day of that week (e.g., Saturday)
         $calendarEndDate = $today->copy()->endOfMonth()->endOfWeek(Carbon::SATURDAY);
 
-        // Create a date "period" to loop through, from the start date to the end date
         $days = new DatePeriod(
             $calendarStartDate,
-            new DateInterval('P1D'), // P1D means "period of 1 day"
-            $calendarEndDate->addDay() // addDay() is needed to include the last day
+            new DateInterval('P1D'),
+            $calendarEndDate->addDay()
         );
-        // --- END OF NEW CALENDAR DATA ---
-
 
         return view('student.dashboard', [
             'student' => $student,
             'groupedRecords' => $groupedRecords,
             'totalAttended' => $totalAttended,
-            'today' => $today,               // Pass the current date
-            'days' => $days,                  // Pass all the days to loop through
-            'attendedDates' => $attendedDates,  // Pass the list of attended dates
+            'today' => $today,
+            'days' => $days,
+            'attendedDates' => $attendedDates,
         ]);
     }
 
@@ -117,6 +109,7 @@ class StudentController extends Controller
 
     /**
      * Show the page to mark attendance.
+     * --- MODIFIED ---
      */
     public function showAttendForm(string $referral_code)
     {
@@ -129,7 +122,7 @@ class StudentController extends Controller
         if ($student->face_template_path == null) {
             return redirect('/student/dashboard')->with('error', 'You must enroll your face before you can attend.');
         }
-        if (!$session->isActive()) { // <-- FIXED THE LOGIC, was `if ($session->isActive())`
+        if (!$session->isActive()) {
             return redirect('/student/dashboard')->with('error', 'That attendance session is not active.');
         }
         $hasAttended = $session->attendance_records()->where('student_id', $student->id)->exists();
@@ -137,8 +130,16 @@ class StudentController extends Controller
              return redirect('/student/dashboard')->with('success', 'You have already attended this session.');
         }
 
+        // --- ADDED THIS BLOCK ---
+        // 1. Generate a secure, random token
+        $token = Str::random(40);
+        // 2. Store this token in the user's session
+        session(['_attendance_token' => $token]);
+        // --- END ADDED BLOCK ---
+
         return view('student.attend', [
-            'session' => $session
+            'session' => $session,
+            'attendance_token' => $token // 3. Pass the token to the view
         ]);
     }
 }

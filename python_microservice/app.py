@@ -1,43 +1,72 @@
-# path: python_microservice/app.py
-
 import os
 import base64
 import re
-import glob
-import shutil
+import json
+import cv2 # OpenCV for image analysis
+import numpy as np # Number crunching
 from flask import Flask, request, jsonify
 from deepface import DeepFace
+from scipy.spatial.distance import cosine
 
-# Initialize the Flask application
 app = Flask(__name__)
 
 # --- Configuration ---
-# Path to the folder where we will store face data
-# This folder will be created automatically
-DB_PATH = "face_data"
-# The model we'll use. VGG-Face is a good balance of speed and accuracy.
 MODEL_NAME = "VGG-Face"
-# The distance metric to use
-DISTANCE_METRIC = "cosine"
-# File name for the temporary file used for verification
 VERIFY_TEMP_FILE = "temp_verify.jpg"
-# The file deepface uses to cache representations. We will delete this
-# to force it to re-index when a new face is enrolled.
-PICKLE_FILE = os.path.join(DB_PATH, "representations_vgg_face.pkl")
+ENCODINGS_FILE = "student_encodings.json" 
+VERIFICATION_THRESHOLD = 0.4 
 
+# --- Helper: Quality Check Function ---
+def check_image_quality(image_path):
+    """
+    Analyzes the image for lighting, blur, and face visibility.
+    Returns: (bool, string) -> (Passed?, Error Message)
+    """
+    img = cv2.imread(image_path)
+    if img is None:
+        return False, "Could not read image file."
 
-# --- Helper Function ---
-def decode_base64_image(data_url, output_path):
-    """
-    Decodes a Base64 data URL (e.g., "data:image/jpeg;base64,...")
-    and saves it as an image file.
-    """
+    # 1. Convert to Grayscale for analysis
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # 2. Check Brightness
+    # Calculate average pixel intensity (0=Black, 255=White)
+    brightness = np.mean(gray)
+    if brightness < 50:
+        return False, "Image is too dark. Please move to a brighter area."
+    if brightness > 230:
+        return False, "Image is too bright/washed out. Avoid direct light behind you."
+
+    # 3. Check Clarity (Blurriness)
+    # Laplacian Variance measures "edginess". Low variance = blurry.
+    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    if laplacian_var < 50: # Threshold depends on webcam quality, 50 is conservative
+        return False, "Image is too blurry. Please hold the camera steady."
+
+    # 4. Check Face Visibility & Pose
+    # We try to detect the face. If it fails, or finds multiple, we reject.
     try:
-        # Remove the "data:image/jpeg;base64," part
+        # We use 'opencv' backend here for speed and strict frontal alignment
+        detected_faces = DeepFace.extract_faces(
+            img_path=image_path,
+            detector_backend='opencv',
+            enforce_detection=True,
+            align=True
+        )
+        
+        if len(detected_faces) > 1:
+            return False, "Multiple faces detected. Please ensure you are alone."
+            
+    except ValueError:
+        return False, "No face detected. Look directly at the camera and ensure your face is visible."
+
+    return True, "Quality OK"
+
+# --- Helper Function (Unchanged) ---
+def decode_base64_image(data_url, output_path):
+    try:
         img_str = re.search(r'base64,(.*)', data_url).group(1)
-        # Decode the base64 string
         img_data = base64.b64decode(img_str)
-        # Write the image data to a file
         with open(output_path, 'wb') as f:
             f.write(img_data)
         return True
@@ -45,75 +74,74 @@ def decode_base64_image(data_url, output_path):
         print(f"Error decoding base64 image: {e}")
         return False
 
-# --- API Endpoints ---
+def load_encodings():
+    if os.path.exists(ENCODINGS_FILE):
+        with open(ENCODINGS_FILE, 'r') as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return {}
+    return {}
 
+def save_encodings(encodings):
+    with open(ENCODINGS_FILE, 'w') as f:
+        json.dump(encodings, f)
+
+# --- /enroll Endpoint (MODIFIED with QA) ---
 @app.route('/enroll', methods=['POST'])
 def enroll():
-    """
-    Endpoint to enroll a new face.
-    Receives:
-    {
-        "student_id": "123",
-        "image_base64": "data:image/jpeg;base64,..."
-    }
-    """
     try:
         data = request.get_json()
-        student_id = data.get('student_id')
+        student_id = str(data.get('student_id'))
         image_base64 = data.get('image_base64')
 
         if not student_id or not image_base64:
-            return jsonify({"status": "error", "message": "Missing student_id or image_base64"}), 400
+            return jsonify({"status": "error", "message": "Missing data"}), 400
 
-        # --- File & Directory Management ---
-        
-        # Create a specific folder for this student
-        # e.g., "face_data/student_123"
-        student_dir = os.path.join(DB_PATH, f"student_{student_id}")
-        
-        # If the directory already exists, clear it out to ensure only one enrollment image
-        if os.path.exists(student_dir):
-            shutil.rmtree(student_dir)
-        
-        # Create the new, empty directory
-        os.makedirs(student_dir, exist_ok=True)
-        
-        # Define the path to save the image
-        img_path = os.path.join(student_dir, "face.jpg")
-
-        # 1. Decode and save the enrollment image
-        if not decode_base64_image(image_base64, img_path):
+        # 1. Decode image to temp file
+        if not decode_base64_image(image_base64, VERIFY_TEMP_FILE):
             return jsonify({"status": "error", "message": "Failed to decode image"}), 500
 
-        # 2. IMPORTANT: Force re-indexing
-        # DeepFace creates a .pkl file to cache face representations.
-        # By deleting it, we force DeepFace to re-scan the entire
-        # face_data directory (including our new student) on the next
-        # 'verify' call. This is simple and effective for an FYP.
-        if os.path.exists(PICKLE_FILE):
-            os.remove(PICKLE_FILE)
+        try:
+            # 2. --- NEW: Run Quality Checks ---
+            is_good_quality, quality_msg = check_image_quality(VERIFY_TEMP_FILE)
+            
+            if not is_good_quality:
+                print(f"Enrollment failed QA: {quality_msg}")
+                return jsonify({"status": "error", "message": quality_msg}), 400
+            # ----------------------------------
+
+            # 3. Generate embedding
+            embedding_obj = DeepFace.represent(
+                img_path=VERIFY_TEMP_FILE,
+                model_name=MODEL_NAME,
+                enforce_detection=True
+            )
+            encoding = embedding_obj[0]["embedding"]
+        
+        except ValueError as ve:
+            return jsonify({"status": "error", "message": "No face detected."}), 400
+        except Exception as e:
+             return jsonify({"status": "error", "message": str(e)}), 500
+        finally:
+            if os.path.exists(VERIFY_TEMP_FILE):
+                os.remove(VERIFY_TEMP_FILE)
+
+        # 4. Save to JSON
+        encodings = load_encodings()
+        encodings[student_id] = encoding
+        save_encodings(encodings)
 
         print(f"Successfully enrolled student {student_id}")
-        return jsonify({
-            "status": "success",
-            "message": "Face enrolled successfully",
-            "path": student_dir # Send the path back to Laravel
-        })
+        return jsonify({ "status": "success", "message": "Face enrolled successfully!" })
 
     except Exception as e:
-        print(f"Error in /enroll: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+# --- /verify Endpoint (Unchanged) ---
 @app.route('/verify', methods=['POST'])
 def verify():
-    """
-    Endpoint to verify a face.
-    Receives:
-    {
-        "image_base64": "data:image/jpeg;base64,..."
-    }
-    """
     try:
         data = request.get_json()
         image_base64 = data.get('image_base64')
@@ -121,74 +149,60 @@ def verify():
         if not image_base64:
             return jsonify({"status": "error", "message": "Missing image_base64"}), 400
 
-        # 1. Decode and save the verification image
         if not decode_base64_image(image_base64, VERIFY_TEMP_FILE):
             return jsonify({"status": "error", "message": "Failed to decode image"}), 500
 
-        # 2. Call DeepFace.find()
-        # This will search for the face in VERIFY_TEMP_FILE against all
-        # faces in the DB_PATH directory.
-        # If the .pkl file is missing (from /enroll), it will
-        # automatically re-generate it.
         try:
-            # Note: enforce_detection=False allows it to proceed even if alignment is tricky
-            # You can set this to True for stricter matching
-            dfs = DeepFace.find(
+            embedding_obj = DeepFace.represent(
                 img_path=VERIFY_TEMP_FILE,
-                db_path=DB_PATH,
                 model_name=MODEL_NAME,
-                distance_metric=DISTANCE_METRIC,
-                enforce_detection=False 
+                enforce_detection=True
             )
-            
-            # dfs is a list of dataframes. We only care about the first (and only) result.
-            if not dfs or dfs[0].empty:
-                print("Verification failed: No matching face found in database.")
-                return jsonify({"status": "fail", "message": "No matching face found"})
-                
-            # Get the first dataframe
-            df = dfs[0]
-            
-            # Find the best match (lowest distance)
-            if "distance" in df.columns:
-                best_match = df.iloc[df['distance'].idxmin()]
-                identity_path = best_match['identity'] # e.g., "face_data/student_123/face.jpg"
-                distance = best_match['distance']
-
-                # Extract the student ID from the path
-                # "face_data/student_123/face.jpg" -> "123"
-                match = re.search(r'student_(\d+)', identity_path)
-                if match:
-                    student_id = int(match.group(1))
-                    print(f"Verification success: Matched student {student_id} with distance {distance}")
-                    return jsonify({
-                        "status": "success",
-                        "student_id": student_id,
-                        "confidence": 1 - distance # Cosine distance is 0-1 (0=identical), so 1-dist = confidence
-                    })
-            
-            print("Verification failed: DataFrame was empty or missing 'distance' column.")
-            return jsonify({"status": "fail", "message": "Verification failed"})
-
+            new_encoding = embedding_obj[0]["embedding"]
         except ValueError as ve:
-            # This often happens if no face is detected in the input image
-            print(f"Verification error (likely no face detected): {ve}")
-            return jsonify({"status": "fail", "message": "No face detected in the image. Please try again."})
+            return jsonify({"status": "fail", "message": "No face detected."})
         finally:
-            # 3. Clean up the temporary verification file
             if os.path.exists(VERIFY_TEMP_FILE):
                 os.remove(VERIFY_TEMP_FILE)
 
+        encodings = load_encodings()
+        if not encodings:
+            return jsonify({"status": "fail", "message": "No students enrolled."})
+
+        min_distance = float('inf')
+        best_student_id = None
+
+        for student_id, stored_encoding in encodings.items():
+            distance = cosine(new_encoding, stored_encoding)
+            if distance < min_distance:
+                min_distance = distance
+                best_student_id = student_id
+        
+        if min_distance < VERIFICATION_THRESHOLD:
+            return jsonify({ "status": "success", "student_id": int(best_student_id) })
+        else:
+            return jsonify({"status": "fail", "message": "Face not recognized."})
+
     except Exception as e:
-        print(f"Error in /verify: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# --- /delete_enrollment Endpoint (Unchanged) ---
+@app.route('/delete_enrollment', methods=['POST'])
+def delete_enrollment():
+    try:
+        data = request.get_json()
+        student_id = str(data.get('student_id'))
+        
+        encodings = load_encodings()
+        if student_id in encodings:
+            del encodings[student_id]
+            save_encodings(encodings)
+            return jsonify({"status": "success"})
+        else:
+            return jsonify({"status": "error", "message": "Student not found."})
 
-# --- Main entry point ---
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 if __name__ == '__main__':
-    # Create the face database directory if it doesn't exist
-    os.makedirs(DB_PATH, exist_ok=True)
-    # Run the Flask app
-    # host='0.0.0.0' makes it accessible from other devices on your network
-    # (like your main Laravel app)
     app.run(host='0.0.0.0', port=5000, debug=True)

@@ -1,5 +1,4 @@
 <?php
-// path: laravel_backend/app/Http/Controllers/AttendanceController.php
 
 namespace App\Http\Controllers;
 
@@ -7,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use App\Models\User;
 use App\Models\AttendanceSession;
 use App\Models\AttendanceRecord;
@@ -21,7 +21,7 @@ class AttendanceController extends Controller
         $this->pythonServiceUrl = env('PYTHON_SERVICE_URL', 'http://127.0.0.1:5000');
     }
 
-    // --- enrollFace() method is UNCHANGED ---
+    // --- 1. ENROLL FACE ---
     public function enrollFace(Request $request)
     {
         $request->validate(['image' => 'required|string']);
@@ -38,10 +38,13 @@ class AttendanceController extends Controller
 
             if ($response->successful()) {
                 $data = $response->json();
+
                 if ($data['status'] === 'success') {
-                    $student->face_template_path = $data['path'];
+                    $student->face_template_path = "enrolled";
                     $student->save();
                     return response()->json(['success' => true, 'message' => 'Face enrolled successfully!']);
+                } else {
+                    return response()->json(['success' => false, 'message' => $data['message'] ?? 'Failed to enroll face.'], 500);
                 }
             }
 
@@ -54,36 +57,43 @@ class AttendanceController extends Controller
         }
     }
 
-
-    /**
-     * Handle the face verification POST request.
-     * --- MODIFIED ---
-     */
+    // --- 2. MARK ATTENDANCE (Fixed: Token + No Location) ---
     public function markAttendance(Request $request)
     {
+        // A. Validate Inputs (No lat/long)
         $request->validate([
             'image' => 'required|string',
-            'referral_code' => 'required|string|exists:attendance_sessions,referral_code' // Changed from session_id
+            'referral_code' => 'required|string|exists:attendance_sessions,referral_code',
+            '_token' => 'required|string',
         ]);
 
+        // B. Security Check: One-Time Token
+        $submittedToken = $request->input('_token');
+        $sessionToken = session('_attendance_token');
+
+        // Check if token matches what's in the session
+        if (!$sessionToken || $submittedToken !== $sessionToken) {
+            return response()->json(['success' => false, 'message' => 'Invalid session token. Please reload the page.'], 419);
+        }
+
+        // NOTE: We do NOT delete the token here. We wait for success.
+
+        // C. Standard Checks
         $student = Auth::user();
         $studentId = $student->id;
         $imageBase64 = $request->input('image');
-        $referral_code = $request->input('referral_code'); // Changed from session_id
-
-        // Find the session by the code
+        $referral_code = $request->input('referral_code');
         $session = AttendanceSession::where('referral_code', $referral_code)->first();
 
-        // --- Security Checks ---
         if (!$session || !$session->isActive()) {
             return response()->json(['success' => false, 'message' => 'Attendance session is not active.']);
         }
         if ($session->attendance_records()->where('student_id', $studentId)->exists()) {
-            return response()->json(['success' => true, 'message' => 'You have already attended.']);
+            return response()->json(['success' => true, 'message' => 'You have already attended this session.']);
         }
 
+        // D. Face Verification
         try {
-            // Send the image to the Python service for verification
             $response = Http::timeout(30)->post("{$this->pythonServiceUrl}/verify", [
                 'image_base64' => $imageBase64,
             ]);
@@ -92,17 +102,23 @@ class AttendanceController extends Controller
                 $data = $response->json();
 
                 if ($data['status'] === 'success' && $data['student_id'] == $studentId) {
-                    // --- SUCCESS! Face matches the logged-in student. ---
 
+                    // Success! Create Record
                     AttendanceRecord::create([
-                        'attendance_session_id' => $session->id, // Use the found session's ID
+                        'attendance_session_id' => $session->id,
                         'student_id' => $studentId,
                         'attended_at' => now(),
+                        // No latitude/longitude here
                     ]);
+
+                    // --- IMPORTANT: Delete token ONLY after success ---
+                    session()->forget('_attendance_token');
+                    // -------------------------------------------------
 
                     return response()->json(['success' => true, 'message' => 'Attendance marked successfully!']);
                 } else {
-                    return response()->json(['success' => false, 'message' => 'Face verification failed. Please try again.']);
+                    $message = $data['message'] ?? 'Face verification failed. Please try again.';
+                    return response()->json(['success' => false, 'message' => $message]);
                 }
             }
 
@@ -115,7 +131,7 @@ class AttendanceController extends Controller
         }
     }
 
-    // --- exportAttendance() method is UNCHANGED ---
+    // --- 3. EXPORT ATTENDANCE ---
     public function exportAttendance(AttendanceSession $session)
     {
         if ($session->course->lecturer_id !== Auth::id()) {
@@ -124,6 +140,7 @@ class AttendanceController extends Controller
 
         $fileName = "attendance_session_{$session->id}.csv";
         $records = $session->attendance_records()->with('student')->get();
+
         $headers = [
             "Content-type"        => "text/csv",
             "Content-Disposition" => "attachment; filename=$fileName",
@@ -134,10 +151,14 @@ class AttendanceController extends Controller
 
         $callback = function() use ($records) {
             $file = fopen('php://output', 'w');
-            fputcsv($file, ['Student ID', 'Student Name', 'Student Email', 'Attended At (Timestamp)']);
+            fputcsv($file, ['No.', 'Student ID', 'Student Name', 'Student Email', 'Attended At (Timestamp)']);
+
+            $counter = 1;
+
             foreach ($records as $record) {
                 fputcsv($file, [
-                    $record->student->id,
+                    $counter++,
+                    $record->student->student_id ?? '-',
                     $record->student->name,
                     $record->student->email,
                     $record->attended_at->toDateTimeString(),
@@ -145,6 +166,7 @@ class AttendanceController extends Controller
             }
             fclose($file);
         };
+
         return new StreamedResponse($callback, 200, $headers);
     }
 }

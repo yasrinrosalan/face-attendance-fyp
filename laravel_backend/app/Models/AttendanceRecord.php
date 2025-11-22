@@ -14,6 +14,8 @@ class AttendanceRecord extends Model
         'attendance_session_id',
         'student_id',
         'attended_at',
+        'latitude',  // <-- Add this
+        'longitude', // <-- Add this
     ];
 
     protected $casts = [

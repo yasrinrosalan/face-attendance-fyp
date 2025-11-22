@@ -9,7 +9,7 @@
                     <form method="POST" action="{{ route('register') }}">
                         @csrf
                         <div class="mb-3">
-                            <label for="name" class="form-label">{{ __('Name') }}</label>
+                            <label for="name" class="form-label">{{ __('Full Name') }}</label>
                             <input id="name" type="text" class="form-control @error('name') is-invalid @enderror"
                                 name="name" value="{{ old('name') }}" required autocomplete="name" autofocus>
                             @error('name')
@@ -17,6 +17,15 @@
                             @enderror
                         </div>
 
+                        <div class="mb-3">
+                            <label for="student_id" class="form-label">{{ __('Student ID (Matric No.)') }}</label>
+                            <input id="student_id" type="text"
+                                class="form-control @error('student_id') is-invalid @enderror" name="student_id"
+                                value="{{ old('student_id') }}" required placeholder="e.g. CB20012">
+                            @error('student_id')
+                                <span class="invalid-feedback" role="alert"><strong>{{ $message }}</strong></span>
+                            @enderror
+                        </div>
                         <div class="mb-3">
                             <label for="email" class="form-label">{{ __('Email Address') }}</label>
                             <input id="email" type="email" class="form-control @error('email') is-invalid @enderror"
