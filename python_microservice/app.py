@@ -16,52 +16,6 @@ VERIFY_TEMP_FILE = "temp_verify.jpg"
 ENCODINGS_FILE = "student_encodings.json" 
 VERIFICATION_THRESHOLD = 0.4 
 
-# --- Helper: Quality Check Function ---
-def check_image_quality(image_path):
-    """
-    Analyzes the image for lighting, blur, and face visibility.
-    Returns: (bool, string) -> (Passed?, Error Message)
-    """
-    img = cv2.imread(image_path)
-    if img is None:
-        return False, "Could not read image file."
-
-    # 1. Convert to Grayscale for analysis
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    # 2. Check Brightness
-    # Calculate average pixel intensity (0=Black, 255=White)
-    brightness = np.mean(gray)
-    if brightness < 50:
-        return False, "Image is too dark. Please move to a brighter area."
-    if brightness > 230:
-        return False, "Image is too bright/washed out. Avoid direct light behind you."
-
-    # 3. Check Clarity (Blurriness)
-    # Laplacian Variance measures "edginess". Low variance = blurry.
-    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-    if laplacian_var < 50: # Threshold depends on webcam quality, 50 is conservative
-        return False, "Image is too blurry. Please hold the camera steady."
-
-    # 4. Check Face Visibility & Pose
-    # We try to detect the face. If it fails, or finds multiple, we reject.
-    try:
-        # We use 'opencv' backend here for speed and strict frontal alignment
-        detected_faces = DeepFace.extract_faces(
-            img_path=image_path,
-            detector_backend='opencv',
-            enforce_detection=True,
-            align=True
-        )
-        
-        if len(detected_faces) > 1:
-            return False, "Multiple faces detected. Please ensure you are alone."
-            
-    except ValueError:
-        return False, "No face detected. Look directly at the camera and ensure your face is visible."
-
-    return True, "Quality OK"
-
 # --- Helper Function (Unchanged) ---
 def decode_base64_image(data_url, output_path):
     try:
@@ -87,7 +41,7 @@ def save_encodings(encodings):
     with open(ENCODINGS_FILE, 'w') as f:
         json.dump(encodings, f)
 
-# --- /enroll Endpoint (MODIFIED with QA) ---
+# --- /enroll Endpoint (MODIFIED: REMOVED CUSTOM QA) ---
 @app.route('/enroll', methods=['POST'])
 def enroll():
     try:
@@ -103,15 +57,8 @@ def enroll():
             return jsonify({"status": "error", "message": "Failed to decode image"}), 500
 
         try:
-            # 2. --- NEW: Run Quality Checks ---
-            is_good_quality, quality_msg = check_image_quality(VERIFY_TEMP_FILE)
-            
-            if not is_good_quality:
-                print(f"Enrollment failed QA: {quality_msg}")
-                return jsonify({"status": "error", "message": quality_msg}), 400
-            # ----------------------------------
-
-            # 3. Generate embedding
+            # 2. Generate embedding (DeepFace handles QA internally)
+            # enforce_detection=True ensures a face is found and is of good enough quality
             embedding_obj = DeepFace.represent(
                 img_path=VERIFY_TEMP_FILE,
                 model_name=MODEL_NAME,
@@ -120,14 +67,15 @@ def enroll():
             encoding = embedding_obj[0]["embedding"]
         
         except ValueError as ve:
-            return jsonify({"status": "error", "message": "No face detected."}), 400
+            # This catches cases where DeepFace cannot find a face or the image is too poor
+            return jsonify({"status": "error", "message": "No face detected or image quality too low. Please try again."}), 400
         except Exception as e:
              return jsonify({"status": "error", "message": str(e)}), 500
         finally:
             if os.path.exists(VERIFY_TEMP_FILE):
                 os.remove(VERIFY_TEMP_FILE)
 
-        # 4. Save to JSON
+        # 3. Save to JSON
         encodings = load_encodings()
         encodings[student_id] = encoding
         save_encodings(encodings)
