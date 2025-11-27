@@ -45,6 +45,17 @@
             transition: all 0.2s ease;
         }
 
+        /* Allow dropdowns to overflow the table */
+        .table-responsive {
+            overflow: visible !important;
+        }
+
+        /* Ensure the card doesn't clip it either */
+        #users-table-wrapper,
+        #sessions-table-wrapper {
+            overflow: visible !important;
+        }
+
         /* Active Tab: Use Brand Teal for a nice contrast */
         .nav-pills .nav-link.active {
             background-color: var(--bs-secondary) !important;

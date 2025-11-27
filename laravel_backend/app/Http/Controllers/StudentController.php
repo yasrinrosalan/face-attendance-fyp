@@ -1,145 +1,169 @@
 <?php
-// path: laravel_backend/app/Http/Controllers/StudentController.php
 
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use App\Models\Course;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Support\Str;
 use App\Models\AttendanceSession;
-use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
-use DatePeriod;
-use DateInterval;
-use Illuminate\Support\Str; // <-- ADD THIS IMPORT for generating the token
+use App\Models\Course;
+use App\Models\AttendanceRecord; // Ensure this is imported
+use Carbon\Carbon; // Import Carbon for dates
 
 class StudentController extends Controller
 {
-    /**
-     * Show the student's main page.
-     */
     public function dashboard()
     {
         $student = Auth::user();
 
-        // --- 1. GET ATTENDANCE STATISTICS ---
-        $records = $student->attendance_records()
-                          ->with('attendance_session.course')
-                          ->orderBy('attended_at', 'desc')
-                          ->get();
+        // 1. Find courses the student has attended
+        $coursesIds = AttendanceSession::whereHas('attendance_records', function($q) use ($student) {
+            $q->where('student_id', $student->id);
+        })->pluck('course_id')->unique();
 
-        $groupedRecords = $records->groupBy('attendance_session.course.course_name');
-        $totalAttended = $records->count();
+        $courses = Course::whereIn('id', $coursesIds)->with(['attendance_sessions.attendance_records' => function($query) use ($student) {
+            $query->where('student_id', $student->id);
+        }])->get();
 
-        // --- 2. PREPARE DATA FOR CALENDAR ---
-        $attendedDates = $records->pluck('attended_at')->map(function ($date) {
-            return $date->format('Y-m-d');
-        })->flip();
+        // 2. Calculate statistics
+        $courseStats = $courses->map(function ($course) use ($student) {
+            $totalSessions = $course->attendance_sessions->count();
+            $attendedSessions = $course->attendance_sessions->filter(function($session) {
+                 return $session->attendance_records->isNotEmpty();
+            })->count();
 
-        $today = Carbon::today();
-        $calendarStartDate = $today->copy()->startOfMonth()->startOfWeek(Carbon::SUNDAY);
-        $calendarEndDate = $today->copy()->endOfMonth()->endOfWeek(Carbon::SATURDAY);
+            $percentage = $totalSessions > 0 ? round(($attendedSessions / $totalSessions) * 100) : 0;
 
-        $days = new DatePeriod(
-            $calendarStartDate,
-            new DateInterval('P1D'),
-            $calendarEndDate->addDay()
-        );
+            $statusColor = 'success';
+            if ($percentage < 75) { $statusColor = 'danger'; }
+            elseif ($percentage < 85) { $statusColor = 'warning'; }
+
+            return (object) [
+                'course_code' => $course->course_code,
+                'course_name' => $course->course_name,
+                'total_sessions' => $totalSessions,
+                'attended_sessions' => $attendedSessions,
+                'percentage' => $percentage,
+                'status_color' => $statusColor,
+            ];
+        });
+
+        // --- 3. CALENDAR LOGIC (The missing part) ---
+        $today = now();
+        $startOfMonth = $today->copy()->startOfMonth();
+        $endOfMonth = $today->copy()->endOfMonth();
+
+        // Get attendance for this month to show on calendar
+        $monthlyRecords = AttendanceRecord::where('student_id', $student->id)
+            ->whereBetween('attended_at', [$startOfMonth, $endOfMonth])
+            ->get()
+            ->keyBy(function($item) {
+                return $item->attended_at->format('Y-m-d');
+            });
+
+        $days = [];
+        // Add empty slots for days before the 1st of the month (alignment)
+        // dayOfWeek returns 0 (Sunday) to 6 (Saturday)
+        $startDayOfWeek = $startOfMonth->dayOfWeek;
+        for ($i = 0; $i < $startDayOfWeek; $i++) {
+            $days[] = null;
+        }
+
+        // Add actual days
+        for ($day = 1; $day <= $endOfMonth->day; $day++) {
+            $currentDate = $startOfMonth->copy()->addDays($day - 1);
+            $dateString = $currentDate->format('Y-m-d');
+
+            $status = null;
+            if ($monthlyRecords->has($dateString)) {
+                $status = $monthlyRecords[$dateString]->status; // 'present' or 'late'
+            }
+
+            $days[] = (object) [
+                'date' => $day,
+                'status' => $status,
+                'is_today' => $currentDate->isToday(),
+            ];
+        }
+        // --------------------------------------------
 
         return view('student.dashboard', [
             'student' => $student,
-            'groupedRecords' => $groupedRecords,
-            'totalAttended' => $totalAttended,
-            'today' => $today,
-            'days' => $days,
-            'attendedDates' => $attendedDates,
+            'courseStats' => $courseStats,
+            'days' => $days,   // <--- Now passing $days
+            'today' => $today, // <--- Now passing $today
         ]);
     }
 
-    /**
-     * Show the student's enrollment management page.
-     */
     public function showEnrollmentPage()
     {
         $student = Auth::user();
-        return view('student.enrollment', compact('student'));
+        return view('student.enrollment', ['student' => $student]);
     }
 
-    /**
-     * Show the face enrollment page.
-     */
     public function showEnrollForm()
     {
-        if (Auth::user()->face_template_path) {
-            return redirect()->route('student.enrollment.page')
-                ->with('error', 'You have already enrolled your face.');
-        }
-        return view('student.enroll');
+        return view('student.enroll_face');
     }
 
-    /**
-     * Allow a student to request a change to their enrollment.
-     */
-    public function requestFaceChange()
+    public function requestFaceChange(Request $request)
     {
-        $student = Auth::user();
-
-        if ($student->face_template_path && !$student->requesting_face_change) {
-            $student->requesting_face_change = true;
-            $student->save();
-            return back()->with('success', 'Your request to change your enrollment has been sent to the administrator.');
-        }
-        return back()->with('error', 'You cannot make this request right now.');
+        return back()->with('success', 'Request submitted to admin.');
     }
 
-    /**
-     * Handle the form submission for entering a referral code.
-     */
     public function findSession(Request $request)
     {
         $request->validate([
-            'referral_code' => 'required|string|exists:attendance_sessions,referral_code'
-        ], [
-            'referral_code.exists' => 'The provided attendance code is invalid.'
+            'referral_code' => 'required|string|max:6',
         ]);
 
-        $code = $request->input('referral_code');
-        return redirect()->route('student.attend.form', ['referral_code' => $code]);
-    }
-
-    /**
-     * Show the page to mark attendance.
-     * --- MODIFIED ---
-     */
-    public function showAttendForm(string $referral_code)
-    {
-        $student = Auth::user();
-        $session = AttendanceSession::where('referral_code', $referral_code)->first();
+        $session = AttendanceSession::where('referral_code', Str::upper($request->referral_code))->first();
 
         if (!$session) {
-            abort(404, 'Session not found.');
+            return back()->with('error', 'Session not found or code invalid.');
         }
-        if ($student->face_template_path == null) {
-            return redirect('/student/dashboard')->with('error', 'You must enroll your face before you can attend.');
-        }
+
         if (!$session->isActive()) {
-            return redirect('/student/dashboard')->with('error', 'That attendance session is not active.');
-        }
-        $hasAttended = $session->attendance_records()->where('student_id', $student->id)->exists();
-        if ($hasAttended) {
-             return redirect('/student/dashboard')->with('success', 'You have already attended this session.');
+             return back()->with('error', 'This session has expired.');
         }
 
-        // --- ADDED THIS BLOCK ---
-        // 1. Generate a secure, random token
-        $token = Str::random(40);
-        // 2. Store this token in the user's session
-        session(['_attendance_token' => $token]);
-        // --- END ADDED BLOCK ---
+        // Create fallback token for manual entry
+        $data = [ 'session_id' => $session->id, 'expires_at' => now()->addSeconds(60)->timestamp ];
+        $encryptedToken = Crypt::encryptString(json_encode($data));
 
-        return view('student.attend', [
-            'session' => $session,
-            'attendance_token' => $token // 3. Pass the token to the view
-        ]);
+        return redirect()->route('student.attend.form', $encryptedToken);
+    }
+
+    public function showAttendForm($token)
+    {
+        try {
+             $decryptedData = json_decode(Crypt::decryptString($token), true);
+             $sessionId = $decryptedData['session_id'];
+             $expiresAtTimestamp = $decryptedData['expires_at'];
+
+             if (now()->timestamp > $expiresAtTimestamp) {
+                 return redirect()->route('student.dashboard')->with('error', 'QR code expired.');
+             }
+
+             $session = AttendanceSession::findOrFail($sessionId);
+
+             if (!$session->isActive()) {
+                return redirect()->route('student.dashboard')->with('error', 'Session inactive.');
+             }
+
+             $formToken = Str::random(40);
+             session(['_attendance_token' => $formToken]);
+
+             return view('student.attend_form', [
+                'session' => $session,
+                'formToken' => $formToken,
+                'encryptedToken' => $token
+            ]);
+
+        } catch (\Exception $e) {
+             return redirect()->route('student.dashboard')->with('error', 'Invalid link.');
+        }
     }
 }

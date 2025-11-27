@@ -30,6 +30,10 @@ class AppServiceProvider extends ServiceProvider
         if ($this->app->environment('production') || $this->app->environment('local')) {
             URL::forceScheme('https');
         }
+
+        // if ($this->app->environment('local') || $this->app->environment('production')) {
+        //     URL::forceScheme('https');
+        // }
         // --- END OF ADDED BLOCK ---
     }
 }

@@ -4,10 +4,13 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+// --- ADDED IMPORT ---
+use Illuminate\Support\Facades\Crypt;
+// --------------------
 use App\Models\Course;
 use App\Models\AttendanceSession;
 use Illuminate\Support\Str;
-use PDF; // Import the PDF library
+use PDF;
 
 class LecturerController extends Controller
 {
@@ -15,30 +18,25 @@ class LecturerController extends Controller
     {
         $lecturer = Auth::user();
 
-        // 1. Fetch courses and ONLY the latest session basic info (removed nested loading here)
+        // Fetch courses with latest session and its records
         $courses = $lecturer->courses_lecturer_teaches()
             ->with(['attendance_sessions' => function ($query) {
                 $query->latest('starts_at')->take(1);
             }])
             ->get();
 
-        // 2. Calculate stats based on the latest session found
+        // Calculate stats for the latest session of each course
         $coursesWithStats = $courses->map(function ($course) {
-            // Get the session object
             $latestSession = $course->attendance_sessions->first();
             $stats = null;
 
             if ($latestSession) {
-                // --- THE FIX IS HERE ---
-                // Explicitly load the records for this specific session instance.
-                // This ensures the relationship data is actually fetched.
+                // Explicitly load records for stats calculation
                 $latestSession->load('attendance_records');
-                // -----------------------
 
                 // TODO: Replace placeholder with actual enrolled student count
                 $totalStudents = 50;
 
-                // Now count the loaded records
                 $presentCount = $latestSession->attendance_records->where('status', 'present')->count();
                 $lateCount = $latestSession->attendance_records->where('status', 'late')->count();
 
@@ -140,15 +138,42 @@ class LecturerController extends Controller
             return redirect('/lecturer/dashboard')->with('error', 'You do not have permission to view this.');
         }
 
-        $attendance_url = route('student.attend.form', $session->referral_code);
+        // We don't generate a static QR code here anymore.
+        // The view will use JS to fetch dynamic ones.
 
         return view('lecturer.show_session', [
             'session' => $session,
-            'attendance_url' => $attendance_url
         ]);
     }
 
-    // --- NEW FUNCTION: MANUAL OVERRIDE ---
+    // --- NEW FUNCTION: GET DYNAMIC QR DATA ---
+    public function getDynamicQrData(AttendanceSession $session)
+    {
+        // Security check
+        if ($session->course->lecturer_id !== Auth::id() || !$session->isActive()) {
+             return response()->json(['error' => 'Unauthorized or expired'], 403);
+        }
+
+        // 1. Create the data package
+        // It expires 35 seconds from now (giving a 5-second buffer for network lag)
+        $data = [
+            'session_id' => $session->id,
+            'expires_at' => now()->addSeconds(15)->timestamp,
+        ];
+
+        // 2. Encrypt the package into a single string token
+        $encryptedToken = Crypt::encryptString(json_encode($data));
+
+        // 3. Generate the URL students will visit
+        $url = route('student.attend.form', ['token' => $encryptedToken]);
+
+        // 4. Return the URL as JSON so Javascript can use it
+        return response()->json([
+            'qr_url' => $url
+        ]);
+    }
+    // -----------------------------------------
+
     public function manualAttendance(Request $request, AttendanceSession $session)
     {
         $request->validate([
@@ -183,7 +208,6 @@ class LecturerController extends Controller
         return back()->with('success', "Success: Manually marked '{$student->name}' as present.");
     }
 
-    // --- NEW FUNCTION: DOWNLOAD PDF ---
     public function downloadPdf(AttendanceSession $session)
     {
         if ($session->course->lecturer_id !== Auth::id()) {

@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Hash; // <-- ADD THIS
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Str;
 
 class AdminController extends Controller
 {
@@ -37,6 +39,34 @@ class AdminController extends Controller
         // --- END NEW LOGIC ---
 
         return view('admin.dashboard', compact('users', 'sessions'));
+    }
+
+    public function showSession(AttendanceSession $session)
+    {
+        // Admin can view ANY session, so no ownership check is needed.
+        return view('admin.show_session', [
+            'session' => $session,
+        ]);
+    }
+
+    // --- NEW: Generate QR Data for Admin View ---
+    public function getDynamicQrData(AttendanceSession $session)
+    {
+        // 1. Create the data package
+        $data = [
+            'session_id' => $session->id,
+            'expires_at' => now()->addSeconds(15)->timestamp,
+        ];
+
+        // 2. Encrypt token
+        $encryptedToken = Crypt::encryptString(json_encode($data));
+
+        // 3. Generate URL
+        $url = route('student.attend.form', ['token' => $encryptedToken]);
+
+        return response()->json([
+            'qr_url' => $url
+        ]);
     }
 
     // --- NEW METHOD: CREATE USER ---

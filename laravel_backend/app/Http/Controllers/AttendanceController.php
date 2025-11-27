@@ -6,7 +6,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema; // Added for checking columns
 use App\Models\User;
 use App\Models\AttendanceSession;
 use App\Models\AttendanceRecord;
@@ -36,57 +40,66 @@ class AttendanceController extends Controller
                 'image_base64' => $imageBase64,
             ]);
 
-            if ($response->successful()) {
-                $data = $response->json();
+            $data = $response->json();
 
-                if ($data['status'] === 'success') {
+            if ($response->successful()) {
+                if (isset($data['status']) && $data['status'] === 'success') {
                     $student->face_template_path = "enrolled";
                     $student->save();
                     return response()->json(['success' => true, 'message' => 'Face enrolled successfully!']);
                 } else {
-                    return response()->json(['success' => false, 'message' => $data['message'] ?? 'Failed to enroll face.'], 500);
+                    return response()->json(['success' => false, 'message' => $data['message'] ?? 'Failed.'], 400);
                 }
             }
-
-            Log::error('Python Enroll Error: ' . $response->body());
-            return response()->json(['success' => false, 'message' => 'Failed to enroll face. Server error.'], 500);
+            return response()->json(['success' => false, 'message' => 'Server Error.'], 500);
 
         } catch (\Exception $e) {
-            Log::error('Python Connection Error: ' . $e->getMessage());
-            return response()->json(['success' => false, 'message' => 'Could not connect to face recognition service.'], 500);
+            return response()->json(['success' => false, 'message' => 'Could not connect to face service.'], 500);
         }
     }
 
-    // --- 2. MARK ATTENDANCE (Fixed: Token + No Location) ---
+    // --- 2. MARK ATTENDANCE (FIXED: Removed Expiry Check on Submission) ---
     public function markAttendance(Request $request)
     {
-        // A. Validate Inputs (No lat/long)
+        // A. Validate Inputs
         $request->validate([
             'image' => 'required|string',
-            'referral_code' => 'required|string|exists:attendance_sessions,referral_code',
+            'encrypted_token' => 'required|string',
             '_token' => 'required|string',
         ]);
 
-        // B. Security Check: One-Time Token
+        // B. Security Check: One-Time Form Token (Prevents double submission)
         $submittedToken = $request->input('_token');
         $sessionToken = session('_attendance_token');
 
-        // Check if token matches what's in the session
         if (!$sessionToken || $submittedToken !== $sessionToken) {
-            return response()->json(['success' => false, 'message' => 'Invalid session token. Please reload the page.'], 419);
+            return response()->json(['success' => false, 'message' => 'Page expired. Please scan the QR code again.'], 419);
         }
 
-        // NOTE: We do NOT delete the token here. We wait for success.
+        // --- DECRYPTION ONLY (Time Check Removed) ---
+        try {
+             // We decrypt ONLY to get the Session ID.
+             // We intentionally REMOVED the timestamp check here.
+             // As long as they passed the "Entry Gate" (scanning the QR),
+             // they are allowed to take their time to position their face.
+             $decryptedData = json_decode(Crypt::decryptString($request->input('encrypted_token')), true);
+             $sessionId = $decryptedData['session_id'];
 
-        // C. Standard Checks
+             $session = AttendanceSession::findOrFail($sessionId);
+
+        } catch (\Exception $e) {
+             return response()->json(['success' => false, 'message' => 'Invalid security token.'], 400);
+        }
+        // ----------------------------------------------------
+
+        // C. Standard Checks (Is the CLASS still running?)
         $student = Auth::user();
         $studentId = $student->id;
         $imageBase64 = $request->input('image');
-        $referral_code = $request->input('referral_code');
-        $session = AttendanceSession::where('referral_code', $referral_code)->first();
 
-        if (!$session || !$session->isActive()) {
-            return response()->json(['success' => false, 'message' => 'Attendance session is not active.']);
+        // We check if the Class Session (e.g. 1 hour) is still active.
+        if (!$session->isActive()) {
+            return response()->json(['success' => false, 'message' => 'The attendance session has ended.']);
         }
         if ($session->attendance_records()->where('student_id', $studentId)->exists()) {
             return response()->json(['success' => true, 'message' => 'You have already attended this session.']);
@@ -98,40 +111,44 @@ class AttendanceController extends Controller
                 'image_base64' => $imageBase64,
             ]);
 
-            if ($response->successful()) {
-                $data = $response->json();
+            $data = $response->json();
 
+            if ($response->successful()) {
                 if ($data['status'] === 'success' && $data['student_id'] == $studentId) {
 
-                    // Success! Create Record
+                    // Determine Status (Present/Late)
+                    $status = 'present';
+                    // Check if the 'late_tolerance' column exists to prevent errors
+                    if (Schema::hasColumn('attendance_sessions', 'late_tolerance')) {
+                         $lateCutoff = $session->starts_at->copy()->addMinutes($session->late_tolerance);
+                         if (now()->greaterThan($lateCutoff)) { $status = 'late'; }
+                    }
+
+                    // Create Record
                     AttendanceRecord::create([
                         'attendance_session_id' => $session->id,
                         'student_id' => $studentId,
                         'attended_at' => now(),
-                        // No latitude/longitude here
+                        'status' => $status,
                     ]);
 
-                    // --- IMPORTANT: Delete token ONLY after success ---
+                    // Clear Caches & Tokens
+                    \Illuminate\Support\Facades\Cache::forget("lecturer.dashboard.{$session->course->lecturer_id}");
                     session()->forget('_attendance_token');
-                    // -------------------------------------------------
 
-                    return response()->json(['success' => true, 'message' => 'Attendance marked successfully!']);
+                    $msg = ($status == 'late') ? 'Attendance marked (LATE).' : 'Attendance marked successfully!';
+                    return response()->json(['success' => true, 'message' => $msg]);
                 } else {
-                    $message = $data['message'] ?? 'Face verification failed. Please try again.';
-                    return response()->json(['success' => false, 'message' => $message]);
+                    return response()->json(['success' => false, 'message' => $data['message'] ?? 'Face verification failed.']);
                 }
             }
-
-            Log::error('Python Verify Error: ' . $response->body());
-            return response()->json(['success' => false, 'message' => 'Failed to verify face. Server error.'], 500);
+            return response()->json(['success' => false, 'message' => $data['message'] ?? 'Server error.'], 500);
 
         } catch (\Exception $e) {
-            Log::error('Python Connection Error: '. $e->getMessage());
             return response()->json(['success' => false, 'message' => 'Could not connect to face recognition service.'], 500);
         }
     }
 
-    // --- 3. EXPORT ATTENDANCE ---
     public function exportAttendance(AttendanceSession $session)
     {
         if ($session->course->lecturer_id !== Auth::id()) {
@@ -142,19 +159,17 @@ class AttendanceController extends Controller
         $records = $session->attendance_records()->with('student')->get();
 
         $headers = [
-            "Content-type"        => "text/csv",
+            "Content-type" => "text/csv",
             "Content-Disposition" => "attachment; filename=$fileName",
-            "Pragma"              => "no-cache",
-            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
-            "Expires"             => "0"
+            "Pragma" => "no-cache",
+            "Cache-Control" => "must-revalidate, post-check=0, pre-check=0",
+            "Expires" => "0"
         ];
 
         $callback = function() use ($records) {
             $file = fopen('php://output', 'w');
-            fputcsv($file, ['No.', 'Student ID', 'Student Name', 'Student Email', 'Attended At (Timestamp)']);
-
+            fputcsv($file, ['No.', 'Student ID', 'Student Name', 'Student Email', 'Attended At', 'Status']);
             $counter = 1;
-
             foreach ($records as $record) {
                 fputcsv($file, [
                     $counter++,
@@ -162,11 +177,11 @@ class AttendanceController extends Controller
                     $record->student->name,
                     $record->student->email,
                     $record->attended_at->toDateTimeString(),
+                    strtoupper($record->status),
                 ]);
             }
             fclose($file);
         };
-
         return new StreamedResponse($callback, 200, $headers);
     }
 }

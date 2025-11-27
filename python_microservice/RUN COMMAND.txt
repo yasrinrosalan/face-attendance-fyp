@@ -3,3 +3,5 @@ ngrok http 8000
 .\venv\Scripts\activate
 
 flask run --host=127.0.0.1 --port=5000 --debug
+
+python -m uvicorn api:app --reload --port 5000

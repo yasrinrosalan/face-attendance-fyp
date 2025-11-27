@@ -36,6 +36,7 @@
                         @endif
                         <div class="small text-muted mt-1">{{ $session->attendance_records->count() }} Attended</div>
                     </td>
+                    <!-- ... inside the table loop ... -->
                     <td class="px-4 py-3 text-end">
                         <div class="dropdown">
                             <button class="btn btn-light btn-sm border rounded-circle" type="button"
@@ -44,7 +45,8 @@
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end border-0 shadow">
                                 <li>
-                                    <a class="dropdown-item" href="{{ route('lecturer.session.show', $session->id) }}">
+                                    <!-- FIX: Changed route from 'lecturer.session.show' to 'admin.session.show' -->
+                                    <a class="dropdown-item" href="{{ route('admin.session.show', $session->id) }}">
                                         <i class="fas fa-qrcode w-20 text-muted me-2"></i> View QR Code
                                     </a>
                                 </li>
@@ -52,10 +54,10 @@
                                     <hr class="dropdown-divider">
                                 </li>
                                 <li>
-                                    <form action="{{ route('admin.session.delete', $session->id) }}" method="POST">
+                                    <form action="{{ route('admin.session.delete', $session->id) }}" method="POST"
+                                        onsubmit="return confirm('Delete this session?');">
                                         @csrf @method('DELETE')
-                                        <button class="dropdown-item text-danger"
-                                            onclick="return confirm('Delete session?');">
+                                        <button class="dropdown-item text-danger">
                                             <i class="fas fa-trash w-20 me-2"></i> Delete Session
                                         </button>
                                     </form>

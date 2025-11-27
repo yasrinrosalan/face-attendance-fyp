@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-    <div class="container py-4">
+    <div class="container py-4 font-sans-serif">
         <div class="mb-4">
             <a href="{{ route('lecturer.dashboard') }}" class="text-decoration-none text-muted fw-medium">
                 <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
@@ -18,7 +18,8 @@
                         <div class="mt-3">
                             @if ($session->isActive())
                                 <span
-                                    class="badge bg-success-subtle text-success px-3 py-2 rounded-pill border border-success-subtle">Active</span>
+                                    class="badge bg-success-subtle text-success px-3 py-2 rounded-pill border border-success-subtle">Active
+                                    - Scan Now</span>
                             @else
                                 <span
                                     class="badge bg-secondary-subtle text-secondary px-3 py-2 rounded-pill border border-secondary-subtle">Expired</span>
@@ -27,24 +28,43 @@
                     </div>
 
                     <div class="card-body text-center p-5">
-                        <div class="d-inline-block p-3 bg-white rounded-4 shadow-sm border mb-4">
-                            {!! QrCode::size(280)->generate($attendance_url) !!}
-                        </div>
 
-                        <div class="mb-4">
-                            <div class="d-inline-block bg-light px-4 py-2 rounded-3 border">
-                                <span class="text-muted small d-block text-uppercase fw-bold mb-1">ATTENDANCE CODE</span>
-                                <span
-                                    class="h1 font-monospace fw-bold text-primary mb-0">{{ $session->referral_code }}</span>
+                        @if ($session->isActive())
+                            <div class="mb-4">
+                                <div class="d-inline-block p-3 bg-white rounded-4 shadow-sm border position-relative"
+                                    style="min-width: 310px; min-height: 310px;">
+                                    <div id="qr-loading" class="position-absolute top-50 start-50 translate-middle">
+                                        <div class="spinner-border text-primary" role="status"></div>
+                                    </div>
+                                    <img id="dynamic-qr-image" src="" alt="Scan for Attendance" width="280"
+                                        height="280" style="opacity: 0; transition: opacity 0.3s ease-in-out;">
+                                </div>
+                                <div class="text-muted small mt-2 fw-bold">
+                                    <i class="fas fa-sync fa-spin me-1"></i> QR Code refreshes automatically every 10s for
+                                    security.
+                                </div>
                             </div>
-                        </div>
+                        @else
+                            <div class="alert alert-warning mb-4">
+                                This session has ended. QR code is disabled.
+                            </div>
+                            <div class="mb-4">
+                                <div class="d-inline-block bg-light px-4 py-2 rounded-3 border">
+                                    <span class="text-muted small d-block text-uppercase fw-bold mb-1">SESSION CODE
+                                        (EXPIRED)</span>
+                                    <span
+                                        class="h1 font-monospace fw-bold text-secondary mb-0">{{ $session->referral_code }}</span>
+                                </div>
+                            </div>
+                        @endif
+
 
                         <div class="mb-4">
                             @if ($session->isActive())
                                 <div
                                     class="p-2 bg-primary-subtle text-primary rounded border border-primary-subtle d-inline-block">
                                     <i class="fas fa-hourglass-half me-2"></i>
-                                    Ends in: <span id="countdown-timer" class="fw-bold font-monospace">Calculing...</span>
+                                    Ends in: <span id="countdown-timer" class="fw-bold font-monospace">Calculating...</span>
                                 </div>
                                 <div class="text-muted small mt-2">
                                     Closes at {{ $session->ends_at->format('h:i A') }}
@@ -66,12 +86,10 @@
                                 class="btn btn-outline-primary px-4 py-2 fw-medium">
                                 <i class="fas fa-file-csv me-2"></i>CSV
                             </a>
-
                             <a href="{{ route('lecturer.attendance.pdf', $session->id) }}"
                                 class="btn btn-primary px-4 py-2 fw-medium">
                                 <i class="fas fa-file-pdf me-2"></i>PDF Report
                             </a>
-
                             <form action="{{ route('lecturer.session.delete', $session->id) }}" method="POST"
                                 onsubmit="return confirm('Delete session?');">
                                 @csrf @method('DELETE')
@@ -96,16 +114,10 @@
                                     <span class="input-group-text bg-light border-end-0"><i
                                             class="fas fa-envelope text-muted"></i></span>
                                     <input type="email" name="student_email" class="form-control border-start-0 ps-1"
-                                        placeholder="Enter Student Email (e.g., ali@student.com)" required>
-                                    <button type="submit" class="btn btn-secondary fw-medium px-4">
-                                        Mark Present
-                                    </button>
+                                        placeholder="Enter Student Email" required>
+                                    <button type="submit" class="btn btn-secondary fw-medium px-4">Mark Present</button>
                                 </div>
                             </form>
-                            <div class="form-text small text-muted">
-                                <i class="fas fa-info-circle me-1"></i> Use this only if a student is physically present but
-                                cannot use the face scanner (e.g., technical issue).
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -115,6 +127,7 @@
 
     @if ($session->isActive())
         <script>
+            // --- 1. SESSION TIMER ---
             let remainingSeconds = {{ now()->diffInSeconds($session->ends_at, false) }};
             const timerElement = document.getElementById("countdown-timer");
 
@@ -139,18 +152,54 @@
             }
             updateTimer();
             const timerInterval = setInterval(updateTimer, 1000);
+
+            // --- 2. DYNAMIC QR REFRESHER ---
+            const qrImage = document.getElementById('dynamic-qr-image');
+            const qrLoading = document.getElementById('qr-loading');
+            const qrDataUrl = "{{ route('lecturer.session.qr_data', $session->id) }}";
+
+            function fetchNewQr() {
+                fetch(qrDataUrl)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.qr_url) {
+                            // Use goqr.me API to generate QR from our dynamic URL
+                            const newSrc =
+                                `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(data.qr_url)}`;
+
+                            // Preload image before showing to avoid flickering
+                            const imgLoader = new Image();
+                            imgLoader.onload = () => {
+                                qrImage.src = newSrc;
+                                qrImage.style.opacity = "1";
+                                qrLoading.classList.add('d-none');
+                            };
+                            imgLoader.src = newSrc;
+                        }
+                    })
+                    .catch(err => console.error("Failed to fetch new QR token:", err));
+            }
+
+            // Fetch immediately on load
+            fetchNewQr();
+            // Then fetch every 30 seconds
+            setInterval(fetchNewQr, 10000);
         </script>
     @endif
 
     <style>
-        .bg-primary-subtle {
-            background-color: #e0e7ff !important;
-            color: #3730a3 !important;
-            border-color: #c7d2fe !important;
+        .font-sans-serif {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
         }
 
         .letter-spacing-1 {
             letter-spacing: 1px;
+        }
+
+        .bg-primary-subtle {
+            background-color: #e0e7ff !important;
+            color: #3730a3 !important;
+            border-color: #c7d2fe !important;
         }
     </style>
 @endsection

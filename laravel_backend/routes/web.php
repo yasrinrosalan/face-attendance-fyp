@@ -37,7 +37,11 @@ Route::middleware('auth')->group(function () {
         Route::post('enroll-face', [AttendanceController::class, 'enrollFace'])->name('enroll.face');
         Route::post('request-face-change', [StudentController::class, 'requestFaceChange'])->name('request.face.change');
         Route::post('find-session', [StudentController::class, 'findSession'])->name('find.session');
-        Route::get('attend/session/{referral_code}', [StudentController::class, 'showAttendForm'])->name('attend.form');
+
+        // --- UPDATED ROUTE: Now accepts long encrypted token ---
+        Route::get('attend/dynamic/{token}', [StudentController::class, 'showAttendForm'])->name('attend.form');
+        // -------------------------------------------------------
+
         Route::post('mark-attendance', [AttendanceController::class, 'markAttendance'])->name('mark.attendance');
     });
 
@@ -46,17 +50,18 @@ Route::middleware('auth')->group(function () {
         Route::get('dashboard', [LecturerController::class, 'dashboard'])->name('dashboard');
         Route::get('analytics', [AnalyticsController::class, 'show'])->name('analytics');
         Route::post('courses', [LecturerController::class, 'createCourse'])->name('course.create');
-        // Added course.show route which was missing from a previous step
         Route::get('courses/{course}', [LecturerController::class, 'showCourse'])->name('course.show');
         Route::post('sessions', [LecturerController::class, 'createSession'])->name('session.create');
         Route::get('sessions/{session}', [LecturerController::class, 'showSession'])->name('session.show');
+
+        // --- NEW ROUTE: Get fresh QR data ---
+        Route::get('sessions/{session}/qr-data', [LecturerController::class, 'getDynamicQrData'])->name('session.qr_data');
+        // ------------------------------------
+
         Route::delete('sessions/{session}', [LecturerController::class, 'deleteSession'])->name('session.delete');
         Route::get('export/session/{session}', [AttendanceController::class, 'exportAttendance'])->name('attendance.export');
-
-        // --- NEW ROUTES FOR MANUAL OVERRIDE & PDF ---
         Route::post('sessions/{session}/manual', [LecturerController::class, 'manualAttendance'])->name('session.manual_attend');
         Route::get('sessions/{session}/pdf', [LecturerController::class, 'downloadPdf'])->name('attendance.pdf');
-        // -------------------------------------------
     });
 
     // Admin
@@ -70,5 +75,8 @@ Route::middleware('auth')->group(function () {
         Route::get('users/login-as/{user}', [AdminController::class, 'loginAs'])->name('user.loginas');
         Route::delete('users/{user}/enrollment', [AdminController::class, 'deleteEnrollment'])->name('user.enrollment.delete');
         Route::delete('sessions/{session}', [AdminController::class, 'deleteSession'])->name('session.delete');
+
+        Route::get('sessions/{session}', [AdminController::class, 'showSession'])->name('session.show');
+        Route::get('sessions/{session}/qr-data', [AdminController::class, 'getDynamicQrData'])->name('session.qr_data');
     });
 });

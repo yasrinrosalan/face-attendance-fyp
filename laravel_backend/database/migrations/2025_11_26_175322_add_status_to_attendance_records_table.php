@@ -12,15 +12,19 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('attendance_records', function (Blueprint $table) {
-            $table->double('latitude')->nullable()->after('attended_at');
-            $table->double('longitude')->nullable()->after('latitude');
+            // Add the new 'status' column
+            $table->enum('status', ['present', 'late', 'absent'])->default('present')->after('attended_at');
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         Schema::table('attendance_records', function (Blueprint $table) {
-            $table->dropColumn(['latitude', 'longitude']);
+            // Remove the column if we roll back
+            $table->dropColumn('status');
         });
     }
 };
