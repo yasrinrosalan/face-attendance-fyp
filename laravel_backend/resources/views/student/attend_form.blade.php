@@ -80,9 +80,9 @@
             const verifyBtn = document.getElementById('verify-btn');
             const loadingOverlay = document.getElementById('loading-overlay');
             const statusMessage = document.getElementById('status-message');
+            const successDetail = document.getElementById('success-detail');
             const step1 = document.getElementById('step-1-face');
             const step2 = document.getElementById('step-2-success');
-            const successDetail = document.getElementById('success-detail');
 
             // 1. Start Camera
             navigator.mediaDevices.getUserMedia({
@@ -100,47 +100,58 @@
                     video.srcObject = stream;
                 })
                 .catch(err => {
-                    console.error("Camera Error:", err);
-                    showStatus('Camera access denied. Please allow permission.', 'danger');
+                    showStatus('Camera access denied. Please allow permissions.', 'danger');
                     verifyBtn.disabled = true;
                 });
 
-            // 2. Handle "Scan Face" Click
+            // 2. Handle Click -> Get Location -> Send Request
             verifyBtn.addEventListener('click', async () => {
                 statusMessage.classList.add('d-none');
                 verifyBtn.disabled = true;
                 loadingOverlay.classList.remove('d-none');
 
-                // --- IMAGE COMPRESSION LOGIC ---
-                // Force small resolution (max 640px width) to keep file size small for mobile
-                const MAX_WIDTH = 640;
-                const scaleFactor = MAX_WIDTH / video.videoWidth;
-                const targetHeight = video.videoHeight * scaleFactor;
-
-                canvas.width = MAX_WIDTH;
-                canvas.height = targetHeight;
-
-                const context = canvas.getContext('2d');
-                context.drawImage(video, 0, 0, MAX_WIDTH, targetHeight);
-
-                // Convert to JPEG at 85% quality
-                const imageBase64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
-                // --------------------------------
-
-                // Get Tokens safely
-                const tokenInput = document.querySelector(
-                    '#attendance-form input[name="encrypted_token"]');
-                const formInput = document.querySelector('#attendance-form input[name="_token_value"]');
-                const csrfInput = document.querySelector('#attendance-form input[name="_token"]');
-
-                if (!tokenInput || !formInput) {
-                    console.error("Critical: Hidden token inputs not found in HTML.");
-                    showStatus("System Error: Tokens missing. Reload page.", 'danger');
+                // --- STEP A: GET LOCATION ---
+                if (!navigator.geolocation) {
+                    showStatus("Geolocation is not supported by your browser.", 'danger');
                     loadingOverlay.classList.add('d-none');
+                    verifyBtn.disabled = false;
                     return;
                 }
 
-                // Send Request
+                navigator.geolocation.getCurrentPosition(
+                    // Success Callback
+                    async (position) => {
+                            const lat = position.coords.latitude;
+                            const long = position.coords.longitude;
+
+                            await sendVerificationRequest(lat, long);
+                        },
+                        // Error Callback
+                        (error) => {
+                            console.error("Location Error:", error);
+                            showStatus(
+                                "Location access denied. You must allow location to mark attendance.",
+                                'danger');
+                            loadingOverlay.classList.add('d-none');
+                            verifyBtn.disabled = false;
+                        }, {
+                            enableHighAccuracy: true
+                        } // Require GPS
+                );
+            });
+
+            async function sendVerificationRequest(lat, long) {
+                // Capture Image
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const context = canvas.getContext('2d');
+                context.drawImage(video, 0, 0, 640, 480); // Resize for mobile
+                const imageBase64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+
+                const tokenInput = document.querySelector('#attendance-form input[name="encrypted_token"]');
+                const formInput = document.querySelector('#attendance-form input[name="_token_value"]');
+                const csrfInput = document.querySelector('#attendance-form input[name="_token"]');
+
                 try {
                     const response = await fetch("{{ route('student.mark.attendance') }}", {
                         method: 'POST',
@@ -152,45 +163,35 @@
                         body: JSON.stringify({
                             encrypted_token: tokenInput.value,
                             _token: formInput.value,
-                            image: imageBase64
+                            image: imageBase64,
+                            latitude: lat, // Send location
+                            longitude: long // Send location
                         })
                     });
 
-                    const responseText = await response.text();
-                    let data;
-                    try {
-                        data = JSON.parse(responseText);
-                    } catch (e) {
-                        console.error("Server Response:", responseText);
-                        throw new Error("Server returned invalid JSON.");
-                    }
+                    const data = await response.json();
 
                     if (data.success) {
                         step1.classList.add('d-none');
                         step2.classList.remove('d-none');
-
                         if (data.message.toLowerCase().includes('late')) {
                             successDetail.innerHTML =
                                 'You have been marked as <span class="text-warning fw-bold">LATE</span>.';
                         } else {
                             successDetail.innerText = data.message;
                         }
-
-                        if (video.srcObject) {
-                            video.srcObject.getTracks().forEach(track => track.stop());
-                        }
+                        if (video.srcObject) video.srcObject.getTracks().forEach(track => track.stop());
                     } else {
-                        showStatus(data.message || 'Verification failed.', 'danger');
+                        showStatus(data.message, 'danger');
                         verifyBtn.disabled = false;
                     }
                 } catch (error) {
-                    console.error("Error:", error);
                     showStatus('Connection error. Please try again.', 'danger');
                     verifyBtn.disabled = false;
                 } finally {
                     loadingOverlay.classList.add('d-none');
                 }
-            });
+            }
 
             function showStatus(message, type) {
                 statusMessage.innerHTML = message;
