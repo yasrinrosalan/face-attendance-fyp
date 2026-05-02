@@ -2,7 +2,6 @@
 FROM php:8.2-apache
 
 # 2. Install OS dependencies and libraries needed for PHP extensions
-# ADDED: libpng-dev, libjpeg-dev, and libfreetype6-dev for the GD extension
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     libzip-dev \
@@ -16,12 +15,17 @@ RUN apt-get update && apt-get install -y \
     nodejs \
     npm
 
-# 3. Configure and install the GD extension (Required for simple-qrcode)
+# 3. Configure and install the GD extension
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) gd
 
 # 4. Install the standard Laravel PHP extensions
 RUN docker-php-ext-install pdo pdo_pgsql zip bcmath
+
+# ---> NEW FIX: Increase PHP Upload Limits to 20MB <---
+RUN echo "upload_max_filesize = 20M" > /usr/local/etc/php/conf.d/uploads.ini \
+    && echo "post_max_size = 25M" >> /usr/local/etc/php/conf.d/uploads.ini \
+    && echo "memory_limit = 256M" >> /usr/local/etc/php/conf.d/uploads.ini
 
 # 5. Enable Apache URL rewriting (mandatory for Laravel routing)
 RUN a2enmod rewrite
