@@ -215,7 +215,7 @@
     <nav class="navbar navbar-expand-lg navbar-custom {{ $isFullWidth ? 'mb-0' : 'mb-0' }} sticky-top">
         <div class="container">
             <a class="navbar-brand" href="/">
-                <img src="{{ asset('logo.png') }}" alt="Logo">
+                {{-- <img src="{{ asset('logo.png') }}" alt="Logo"> --}}
             </a>
 
             <button class="navbar-toggler border-0 p-2" type="button" data-bs-toggle="collapse"

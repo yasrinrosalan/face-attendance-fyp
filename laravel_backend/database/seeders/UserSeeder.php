@@ -22,7 +22,7 @@ class UserSeeder extends Seeder
 
         // --- Create a dummy Lecturer ---
         User::create([
-            'name' => 'Dr. Alan Smith',
+            'name' => 'Dr. Nabil',
             'email' => 'lecturer@demo.com',
             'password' => Hash::make('password'),
             'role' => 'lecturer',
@@ -30,7 +30,8 @@ class UserSeeder extends Seeder
 
         // --- Create a dummy Student ---
         User::create([
-            'name' => 'John Doe',
+            'name' => 'YASRIN',
+            'student_id' => 'CB23102',
             'email' => 'student@demo.com',
             'password' => Hash::make('password'),
             'role' => 'student',
@@ -38,7 +39,8 @@ class UserSeeder extends Seeder
 
         // --- Create another dummy Student ---
         User::create([
-            'name' => 'Jane Roe',
+            'name' => 'AMIR',
+            'student_id' => 'CB23103',
             'email' => 'student2@demo.com',
             'password' => Hash::make('password'),
             'role' => 'student',

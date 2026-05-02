@@ -16,6 +16,8 @@ return new class extends Migration
             $table->dateTime('starts_at');
             $table->dateTime('ends_at');
 
+            $table->integer('week_number'); // 1 to 14
+
             // --- ADDED LINE ---
             // This will store the unique code like 'CS101-A'
             $table->string('referral_code')->unique()->nullable();

@@ -24,7 +24,6 @@ class AttendanceController extends Controller
 
     public function enrollFace(Request $request)
     {
-        // (Keep existing enroll logic unchanged)
         $request->validate(['image' => 'required|string']);
         $student = Auth::user();
         try {
@@ -39,15 +38,15 @@ class AttendanceController extends Controller
         } catch (\Exception $e) { return response()->json(['success' => false, 'message' => 'Server Error.'], 500); }
     }
 
-    // --- MARK ATTENDANCE WITH GEOFENCING ---
+    // --- MARK ATTENDANCE ---
     public function markAttendance(Request $request)
     {
         $request->validate([
             'image' => 'required|string',
             'encrypted_token' => 'required|string',
             '_token' => 'required|string',
-            'latitude' => 'required|numeric',  // <--- NEW REQUIREMENT
-            'longitude' => 'required|numeric', // <--- NEW REQUIREMENT
+            'latitude' => 'nullable|numeric',
+            'longitude' => 'nullable|numeric',
         ]);
 
         // 1. Security Checks
@@ -55,6 +54,9 @@ class AttendanceController extends Controller
         if (!$sessionToken || $request->input('_token') !== $sessionToken) {
             return response()->json(['success' => false, 'message' => 'Page expired. Reload.'], 419);
         }
+
+        $studentLat = $request->input('latitude');
+        $studentLong = $request->input('longitude');
 
         try {
              $decryptedData = json_decode(Crypt::decryptString($request->input('encrypted_token')), true);
@@ -64,40 +66,56 @@ class AttendanceController extends Controller
              return response()->json(['success' => false, 'message' => 'Invalid token.'], 400);
         }
 
-        // --- 2. GEOFENCING CHECK ---
+        $student = Auth::user();
 
-        // SET YOUR TARGET: Example (UMPSA Pekan Library)
-        $targetLat = 2.9036;     // <--- CHANGE THIS TO YOUR CLASSROOM
-        $targetLong = 101.8468;  // <--- CHANGE THIS TO YOUR CLASSROOM
-        $allowedRadius = 200;    // Allowed range in meters (e.g., 200m)
+        // --- NEW: THE ENROLLMENT SECURITY CHECK ---
+        $isEnrolled = $student->enrolledCourses()->where('course_id', $session->course_id)->exists();
 
-        //2.9036343573297367, 101.84688895304195 rumah eco
-        //3.5467586070219017, 103.42774750274906 fkom
-
-        $studentLat = $request->input('latitude');
-        $studentLong = $request->input('longitude');
-
-        // Calculate Distance (Haversine Formula)
-        $earthRadius = 6371000;
-        $dLat = deg2rad($studentLat - $targetLat);
-        $dLon = deg2rad($studentLong - $targetLong);
-        $a = sin($dLat / 2) * sin($dLat / 2) +
-             cos(deg2rad($targetLat)) * cos(deg2rad($studentLat)) *
-             sin($dLon / 2) * sin($dLon / 2);
-        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
-        $distance = $earthRadius * $c;
-
-        // Reject if too far
-        if ($distance > $allowedRadius) {
+        if (!$isEnrolled) {
             return response()->json([
                 'success' => false,
-                'message' => "Location Error: You are " . round($distance) . "m away. You must be in class."
-            ]);
+                'message' => 'Access Denied: You cannot take attendance because you are not officially enrolled in this course. Please use the Course Code to enroll first.'
+            ], 403);
         }
-        // ---------------------------
+        // ------------------------------------------
+
+        // --- 2. GEOFENCING CHECK (Only for Physical) ---
+        if ($session->mode === 'physical') {
+
+            // UPDATED: Dynamically pull the faculty coordinates from the session!
+            // We keep the old UMPSA coordinates as a fallback just in case an old session doesn't have it.
+            $targetLat = $session->latitude ?? 3.5467;
+            $targetLong = $session->longitude ?? 103.4277;
+
+            //2.9036343573297367, 101.84688895304195 rumah eco
+            //3.5467586070219017, 103.42774750274906 fkom
+            //3.541220151703538, 103.41806436304823 rumah sewa
+
+            $allowedRadius = 200; // 200 meters
+
+            if (is_null($studentLat) || is_null($studentLong)) {
+                return response()->json(['success' => false, 'message' => 'Location required for physical class. Allow GPS permission.']);
+            }
+
+            // Haversine Formula
+            $earthRadius = 6371000;
+            $dLat = deg2rad($studentLat - $targetLat);
+            $dLon = deg2rad($studentLong - $targetLong);
+            $a = sin($dLat / 2) * sin($dLat / 2) +
+                 cos(deg2rad($targetLat)) * cos(deg2rad($studentLat)) *
+                 sin($dLon / 2) * sin($dLon / 2);
+            $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+            $distance = $earthRadius * $c;
+
+            if ($distance > $allowedRadius) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Location Error: You are " . round($distance) . "m away from the designated Faculty building. You must be in class."
+                ]);
+            }
+        }
 
         // 3. Standard Checks
-        $student = Auth::user();
         if (!$session->isActive()) return response()->json(['success' => false, 'message' => 'Session closed.']);
         if ($session->attendance_records()->where('student_id', $student->id)->exists()) {
             return response()->json(['success' => true, 'message' => 'Already attended.']);
@@ -121,14 +139,14 @@ class AttendanceController extends Controller
                          if (now()->greaterThan($lateCutoff)) { $status = 'late'; }
                     }
 
-                    // Save Record WITH Location Data
+                    // Save Record
                     AttendanceRecord::create([
                         'attendance_session_id' => $session->id,
                         'student_id' => $student->id,
                         'attended_at' => now(),
                         'status' => $status,
-                        'latitude' => $studentLat,   // <--- Save
-                        'longitude' => $studentLong, // <--- Save
+                        'latitude' => $studentLat,
+                        'longitude' => $studentLong,
                     ]);
 
                     \Illuminate\Support\Facades\Cache::forget("lecturer.dashboard.{$session->course->lecturer_id}");
@@ -140,17 +158,16 @@ class AttendanceController extends Controller
                     return response()->json(['success' => false, 'message' => $data['message'] ?? 'Face mismatch.']);
                 }
             }
-            return response()->json(['success' => false, 'message' => 'Server Error.'], 500);
+            return response()->json(['success' => false, 'message' => $data['message'] ?? 'Server Error.'], 500);
 
         } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => 'Service connection failed.'], 500);
+            // Modified to show actual error for debugging
+            return response()->json(['success' => false, 'message' => 'Error: ' . $e->getMessage()], 500);
         }
     }
 
     public function exportAttendance(AttendanceSession $session)
     {
-        // (Keep your existing export code)
-        // ... (omitted for brevity, copy from previous version)
         if ($session->course->lecturer_id !== Auth::id()) {
             return redirect('/lecturer/dashboard')->with('error', 'Unauthorized.');
         }
@@ -159,13 +176,13 @@ class AttendanceController extends Controller
         $headers = ["Content-type" => "text/csv", "Content-Disposition" => "attachment; filename=$fileName", "Pragma" => "no-cache", "Cache-Control" => "must-revalidate, post-check=0, pre-check=0", "Expires" => "0"];
         $callback = function() use ($records) {
             $file = fopen('php://output', 'w');
-            fputcsv($file, ['No.', 'Student ID', 'Name', 'Email', 'Time', 'Status', 'Location (Lat/Long)']); // Added Header
+            fputcsv($file, ['No.', 'Student ID', 'Name', 'Email', 'Time', 'Status', 'Location (Lat/Long)']);
             $counter = 1;
             foreach ($records as $record) {
                 fputcsv($file, [
                     $counter++, $record->student->student_id, $record->student->name, $record->student->email,
                     $record->attended_at, strtoupper($record->status),
-                    "{$record->latitude}, {$record->longitude}" // Added Data
+                    "{$record->latitude}, {$record->longitude}"
                 ]);
             }
             fclose($file);

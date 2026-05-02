@@ -13,9 +13,15 @@ class AttendanceSession extends Model
     protected $fillable = [
         'course_id',
         'session_title',
+        'mode', // <--- ADD THIS
+        'referral_code',
         'starts_at',
         'ends_at',
-        'referral_code', // --- ADDED THIS LINE ---
+        'late_tolerance',
+        'week_number',
+        'mode',
+        'latitude',     // Add this
+        'longitude',   // Add this
     ];
 
     protected $casts = [

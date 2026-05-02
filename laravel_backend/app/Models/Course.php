@@ -10,7 +10,7 @@ class Course extends Model
 {
     use HasFactory;
 
-    protected $fillable = [ 'course_code', 'course_name', 'lecturer_id' ];
+    protected $fillable = [ 'course_code', 'course_name', 'lecturer_id', 'academic_year', 'semester' ];
 
     public function lecturer()
     {
@@ -22,5 +22,12 @@ class Course extends Model
     public function attendance_sessions()
     {
         return $this->hasMany(AttendanceSession::class, 'course_id');
+    }
+
+    public function students()
+    {
+        // This tells Laravel to use the 'course_student' pivot table
+        // to find Users (students) attached to this Course.
+        return $this->belongsToMany(User::class, 'course_student', 'course_id', 'student_id');
     }
 }

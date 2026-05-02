@@ -32,15 +32,22 @@ Route::middleware('auth')->group(function () {
     // Student
     Route::middleware('is.student')->prefix('student')->name('student.')->group(function () {
         Route::get('dashboard', [StudentController::class, 'dashboard'])->name('dashboard');
+
+        // --- NEW ROUTE: Student QR Scanner ---
+        Route::get('scanner', [StudentController::class, 'scanner'])->name('scanner');
+        // ------------------------------------
+
         Route::get('enrollment', [StudentController::class, 'showEnrollmentPage'])->name('enrollment.page');
         Route::get('enroll-face', [StudentController::class, 'showEnrollForm'])->name('enroll.form');
         Route::post('enroll-face', [AttendanceController::class, 'enrollFace'])->name('enroll.face');
         Route::post('request-face-change', [StudentController::class, 'requestFaceChange'])->name('request.face.change');
         Route::post('find-session', [StudentController::class, 'findSession'])->name('find.session');
 
-        // --- UPDATED ROUTE: Now accepts long encrypted token ---
+        // --- Student Self-Enrollment ---
+        Route::post('enroll-course', [StudentController::class, 'enrollCourse'])->name('enroll.course');
+
+        // --- Attend Form (Dynamic QR) ---
         Route::get('attend/dynamic/{token}', [StudentController::class, 'showAttendForm'])->name('attend.form');
-        // -------------------------------------------------------
 
         Route::post('mark-attendance', [AttendanceController::class, 'markAttendance'])->name('mark.attendance');
     });
@@ -54,9 +61,12 @@ Route::middleware('auth')->group(function () {
         Route::post('sessions', [LecturerController::class, 'createSession'])->name('session.create');
         Route::get('sessions/{session}', [LecturerController::class, 'showSession'])->name('session.show');
 
-        // --- NEW ROUTE: Get fresh QR data ---
+        // --- Get fresh QR data ---
         Route::get('sessions/{session}/qr-data', [LecturerController::class, 'getDynamicQrData'])->name('session.qr_data');
-        // ------------------------------------
+
+        // --- FIXED EXPORT ROUTE: Pointing to LecturerController ---
+        Route::get('course/{id}/export-csv', [LecturerController::class, 'exportCourseCsv'])->name('course.export_csv');
+        // --------------------------
 
         Route::delete('sessions/{session}', [LecturerController::class, 'deleteSession'])->name('session.delete');
         Route::get('export/session/{session}', [AttendanceController::class, 'exportAttendance'])->name('attendance.export');

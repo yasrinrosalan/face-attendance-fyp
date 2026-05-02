@@ -1,62 +1,205 @@
 @extends('layouts.app')
 
 @section('content')
-    <div class="row justify-content-center">
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header fs-4">{{ __('Student Registration') }}</div>
-                <div class="card-body">
-                    <form method="POST" action="{{ route('register') }}">
-                        @csrf
-                        <div class="mb-3">
-                            <label for="name" class="form-label">{{ __('Full Name') }}</label>
-                            <input id="name" type="text" class="form-control @error('name') is-invalid @enderror"
-                                name="name" value="{{ old('name') }}" required autocomplete="name" autofocus>
-                            @error('name')
-                                <span class="invalid-feedback" role="alert"><strong>{{ $message }}</strong></span>
-                            @enderror
+    <div class="container-fluid p-0" style="min-height: calc(100vh - 80px);">
+        <div class="row g-0 h-100">
+
+            <div class="col-lg-7 d-none d-lg-block position-relative"
+                style="min-height: calc(100vh - 80px); background-color: var(--bs-primary);">
+                <div class="position-absolute top-0 start-0 w-100 h-100"
+                    style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #2980b9 100%); opacity: 0.95;">
+                </div>
+
+                <div class="position-absolute top-50 start-50 translate-middle text-center text-white w-75">
+                    <div class="mb-4">
+                        <i class="fas fa-user-plus fa-4x mb-3 shadow-sm rounded-circle p-4 bg-white bg-opacity-10"></i>
+                    </div>
+                    <h1 class="display-4 fw-bolder mb-3 tracking-tight">Join e-Hadir</h1>
+                    <p class="lead fs-5 mb-5 text-white-50 fw-normal">
+                        Register your face once. Mark attendance in seconds.
+                    </p>
+
+                    <div class="d-flex justify-content-center gap-3 flex-wrap">
+                        <span
+                            class="badge bg-white bg-opacity-25 text-white rounded-pill px-4 py-2 fw-medium border border-light border-opacity-25 shadow-sm">
+                            <i class="fas fa-shield-alt me-2 text-warning"></i>Secure
+                        </span>
+                        <span
+                            class="badge bg-white bg-opacity-25 text-white rounded-pill px-4 py-2 fw-medium border border-light border-opacity-25 shadow-sm">
+                            <i class="fas fa-bolt me-2 text-warning"></i>Fast
+                        </span>
+                        <span
+                            class="badge bg-white bg-opacity-25 text-white rounded-pill px-4 py-2 fw-medium border border-light border-opacity-25 shadow-sm">
+                            <i class="fas fa-magic me-2 text-warning"></i>AI-Powered
+                        </span>
+                    </div>
+                </div>
+
+                <div class="position-absolute bottom-0 start-0 w-100 p-4 text-white-50 small text-center fw-medium">
+                    &copy; {{ date('Y') }} e-Hadir University System
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-5 d-flex flex-column bg-white" style="min-height: calc(100vh - 80px);">
+
+                <div class="d-lg-none bg-primary text-white p-4 text-center mb-4 shadow-sm"
+                    style="background: linear-gradient(135deg, var(--bs-primary), var(--bs-secondary));">
+                    <i class="fas fa-user-plus fa-2x mb-2"></i>
+                    <h3 class="fw-bold h5 mb-0">Student Registration</h3>
+                </div>
+
+                <div class="flex-grow-1 d-flex align-items-center justify-content-center">
+                    <div class="w-100 px-4 px-md-5 py-4" style="max-width: 500px;">
+
+                        <div class="mb-4">
+                            <h2 class="fw-bold text-dark mb-2">Create Account</h2>
+                            <p class="text-muted">Enter your details to register as a student.</p>
                         </div>
 
-                        <div class="mb-3">
-                            <label for="student_id" class="form-label">{{ __('Student ID (Matric No.)') }}</label>
-                            <input id="student_id" type="text"
-                                class="form-control @error('student_id') is-invalid @enderror" name="student_id"
-                                value="{{ old('student_id') }}" required placeholder="e.g. CB20012">
-                            @error('student_id')
-                                <span class="invalid-feedback" role="alert"><strong>{{ $message }}</strong></span>
-                            @enderror
-                        </div>
-                        <div class="mb-3">
-                            <label for="email" class="form-label">{{ __('Email Address') }}</label>
-                            <input id="email" type="email" class="form-control @error('email') is-invalid @enderror"
-                                name="email" value="{{ old('email') }}" required autocomplete="email">
-                            @error('email')
-                                <span class="invalid-feedback" role="alert"><strong>{{ $message }}</strong></span>
-                            @enderror
-                        </div>
+                        <form method="POST" action="{{ route('register') }}">
+                            @csrf
 
-                        <div class="mb-3">
-                            <label for="password" class="form-label">{{ __('Password') }}</label>
-                            <input id="password" type="password"
-                                class="form-control @error('password') is-invalid @enderror" name="password" required
-                                autocomplete="new-password">
-                            @error('password')
-                                <span class="invalid-feedback" role="alert"><strong>{{ $message }}</strong></span>
-                            @enderror
-                        </div>
+                            <div class="mb-3">
+                                <label for="name" class="form-label small fw-bold text-secondary mb-1 ls-1">FULL
+                                    NAME</label>
+                                <div class="input-group shadow-sm-hover rounded-3 overflow-hidden border">
+                                    <span class="input-group-text bg-light border-0 text-muted px-3">
+                                        <i class="fas fa-user"></i>
+                                    </span>
+                                    <input id="name" type="text"
+                                        class="form-control bg-light border-0 py-2 @error('name') is-invalid @enderror"
+                                        name="name" value="{{ old('name') }}" placeholder="e.g. John Doe" required
+                                        autocomplete="name" autofocus>
+                                </div>
+                                @error('name')
+                                    <span class="text-danger small mt-1 d-block fw-medium" role="alert"><i
+                                            class="fas fa-exclamation-circle me-1"></i>{{ $message }}</span>
+                                @enderror
+                            </div>
 
-                        <div class="mb-3">
-                            <label for="password-confirm" class="form-label">{{ __('Confirm Password') }}</label>
-                            <input id="password-confirm" type="password" class="form-control" name="password_confirmation"
-                                required autocomplete="new-password">
-                        </div>
+                            <div class="mb-3">
+                                <label for="student_id" class="form-label small fw-bold text-secondary mb-1 ls-1">STUDENT ID
+                                    (MATRIC NO.)</label>
+                                <div class="input-group shadow-sm-hover rounded-3 overflow-hidden border">
+                                    <span class="input-group-text bg-light border-0 text-muted px-3">
+                                        <i class="fas fa-id-badge"></i>
+                                    </span>
+                                    <input id="student_id" type="text"
+                                        class="form-control bg-light border-0 py-2 @error('student_id') is-invalid @enderror"
+                                        name="student_id" value="{{ old('student_id') }}" required
+                                        placeholder="e.g. CB20012">
+                                </div>
+                                @error('student_id')
+                                    <span class="text-danger small mt-1 d-block fw-medium" role="alert"><i
+                                            class="fas fa-exclamation-circle me-1"></i>{{ $message }}</span>
+                                @enderror
+                            </div>
 
-                        <button type="submit" class="btn btn-primary w-100">
-                            {{ __('Register') }}
-                        </button>
-                    </form>
+                            <div class="mb-3">
+                                <label for="email" class="form-label small fw-bold text-secondary mb-1 ls-1">EMAIL
+                                    ADDRESS</label>
+                                <div class="input-group shadow-sm-hover rounded-3 overflow-hidden border">
+                                    <span class="input-group-text bg-light border-0 text-muted px-3">
+                                        <i class="fas fa-envelope"></i>
+                                    </span>
+                                    <input id="email" type="email"
+                                        class="form-control bg-light border-0 py-2 @error('email') is-invalid @enderror"
+                                        name="email" value="{{ old('email') }}" placeholder="name@example.com" required
+                                        autocomplete="email">
+                                </div>
+                                @error('email')
+                                    <span class="text-danger small mt-1 d-block fw-medium" role="alert"><i
+                                            class="fas fa-exclamation-circle me-1"></i>{{ $message }}</span>
+                                @enderror
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="password"
+                                    class="form-label small fw-bold text-secondary mb-1 ls-1">PASSWORD</label>
+                                <div class="input-group shadow-sm-hover rounded-3 overflow-hidden border">
+                                    <span class="input-group-text bg-light border-0 text-muted px-3">
+                                        <i class="fas fa-lock"></i>
+                                    </span>
+                                    <input id="password" type="password"
+                                        class="form-control bg-light border-0 py-2 @error('password') is-invalid @enderror"
+                                        name="password" placeholder="Create a password" required
+                                        autocomplete="new-password">
+                                </div>
+                                @error('password')
+                                    <span class="text-danger small mt-1 d-block fw-medium" role="alert"><i
+                                            class="fas fa-exclamation-circle me-1"></i>{{ $message }}</span>
+                                @enderror
+                            </div>
+
+                            <div class="mb-4">
+                                <label for="password-confirm"
+                                    class="form-label small fw-bold text-secondary mb-1 ls-1">CONFIRM PASSWORD</label>
+                                <div class="input-group shadow-sm-hover rounded-3 overflow-hidden border">
+                                    <span class="input-group-text bg-light border-0 text-muted px-3">
+                                        <i class="fas fa-check-circle"></i>
+                                    </span>
+                                    <input id="password-confirm" type="password"
+                                        class="form-control bg-light border-0 py-2" name="password_confirmation"
+                                        placeholder="Confirm your password" required autocomplete="new-password">
+                                </div>
+                            </div>
+
+                            <button type="submit"
+                                class="btn btn-primary w-100 py-3 fw-bold rounded-3 shadow-sm btn-hover-lift mb-4">
+                                Register Account <i class="fas fa-user-plus ms-2"></i>
+                            </button>
+
+                            <div class="text-center text-muted small">
+                                Already have an account? <a href="{{ route('login') }}"
+                                    class="fw-bold text-decoration-none ms-1">Sign In</a>
+                            </div>
+                        </form>
+
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+
+    <style>
+        /* Fix for container padding override */
+        main.container {
+            padding: 0 !important;
+            max-width: 100% !important;
+        }
+
+        /* Spacing utilities */
+        .ls-1 {
+            letter-spacing: 0.5px;
+        }
+
+        /* Custom Input Styling */
+        .form-control:focus {
+            background-color: #fff !important;
+            box-shadow: none;
+        }
+
+        /* Focus glow effect on the container instead of the input */
+        .input-group:focus-within {
+            background-color: #fff;
+            border-color: var(--bs-primary) !important;
+            box-shadow: 0 0 0 0.25rem rgba(var(--bs-primary-rgb), 0.15);
+        }
+
+        .input-group:focus-within .input-group-text,
+        .input-group:focus-within .form-control {
+            background-color: #fff !important;
+            color: var(--bs-primary);
+        }
+
+        /* Button Hover Lift Effect */
+        .btn-hover-lift {
+            transition: all 0.2s ease-in-out;
+        }
+
+        .btn-hover-lift:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+        }
+    </style>
 @endsection

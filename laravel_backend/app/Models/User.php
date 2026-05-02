@@ -37,4 +37,10 @@ class User extends Authenticatable
     public function isLecturer() { return $this->role === 'lecturer'; }
     public function isStudent() { return $this->role === 'student'; }
     public function isAdmin() { return $this->role === 'admin'; }
+
+    // Add this inside your User model
+    public function enrolledCourses()
+    {
+        return $this->belongsToMany(Course::class, 'course_student', 'student_id', 'course_id');
+    }
 }

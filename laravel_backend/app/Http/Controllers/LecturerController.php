@@ -4,11 +4,11 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-// --- ADDED IMPORT ---
 use Illuminate\Support\Facades\Crypt;
-// --------------------
 use App\Models\Course;
 use App\Models\AttendanceSession;
+use App\Models\AttendanceRecord;
+use Carbon\Carbon;
 use Illuminate\Support\Str;
 use PDF;
 
@@ -18,12 +18,19 @@ class LecturerController extends Controller
     {
         $lecturer = Auth::user();
 
-        // Fetch courses with latest session and its records
+        // --- ADDED: SEMESTER FILTERING LOGIC ---
+        // In a real production app, these could be fetched from a 'Settings' table.
+        // For now, we set the active semester statically to filter the dashboard.
+        $currentYear = '2025/2026';
+        $currentSemester = 1;
+
+        // Fetch courses for the current semester with latest session and its records
         $courses = $lecturer->courses_lecturer_teaches()
-            ->with(['attendance_sessions' => function ($query) {
-                $query->latest('starts_at')->take(1);
-            }])
+            ->where('academic_year', $currentYear)
+            ->where('semester', $currentSemester)
+            ->withCount('attendance_sessions')
             ->get();
+        // ----------------------------------------
 
         // Calculate stats for the latest session of each course
         $coursesWithStats = $courses->map(function ($course) {
@@ -34,8 +41,8 @@ class LecturerController extends Controller
                 // Explicitly load records for stats calculation
                 $latestSession->load('attendance_records');
 
-                // TODO: Replace placeholder with actual enrolled student count
-                $totalStudents = 50;
+                // Using the actual enrolled student count via the pivot table relationship
+                $totalStudents = $course->students()->count();
 
                 $presentCount = $latestSession->attendance_records->where('status', 'present')->count();
                 $lateCount = $latestSession->attendance_records->where('status', 'late')->count();
@@ -56,7 +63,7 @@ class LecturerController extends Controller
 
         return view('lecturer.dashboard', [
             'lecturer' => $lecturer,
-            'courses' => $coursesWithStats,
+            'courses' => $courses,
         ]);
     }
 
@@ -65,11 +72,15 @@ class LecturerController extends Controller
         $request->validate([
             'course_name' => 'required|string|max:255',
             'course_code' => 'required|string|max:20',
+            'academic_year' => 'required|string|max:20', // e.g., "2025/2026"
+            'semester' => 'required|integer|min:1|max:3', // e.g., 1 or 2
         ]);
 
         Course::create([
             'course_name' => $request->course_name,
             'course_code' => $request->course_code,
+            'academic_year' => $request->academic_year,
+            'semester' => $request->semester,
             'lecturer_id' => Auth::id(),
         ]);
 
@@ -91,10 +102,14 @@ class LecturerController extends Controller
 
     public function createSession(Request $request)
     {
+        // --- UPDATED: ADDED LOCATION VALIDATION ---
         $request->validate([
             'course_id' => 'required|exists:courses,id',
             'session_title' => 'required|string|max:255',
             'duration' => 'required|integer|min:1',
+            'mode' => 'required|in:physical,online',
+            'week_number' => 'required|integer|min:1|max:14',
+            'location_coords' => 'required_if:mode,physical', // Requires dropdown if mode is physical
         ]);
 
         $lecturer = Auth::user();
@@ -104,17 +119,31 @@ class LecturerController extends Controller
             return back()->with('error', 'You do not own this course.');
         }
 
-        $code = null;
-        do {
-            $code = Str::upper(Str::random(6));
-        } while (AttendanceSession::where('referral_code', $code)->exists());
+        // --- NEW: EXTRACT LAT/LONG FROM DROPDOWN ---
+        $latitude = null;
+        $longitude = null;
 
+        if ($request->mode === 'physical' && $request->filled('location_coords')) {
+            $coords = explode(',', $request->location_coords);
+            if (count($coords) === 2) {
+                $latitude = trim($coords[0]);
+                $longitude = trim($coords[1]);
+            }
+        }
+        // -------------------------------------------
+
+        $code = Str::upper(Str::random(6));
         $startsAt = now();
         $endsAt = $startsAt->copy()->addMinutes($request->duration);
 
+        // --- UPDATED: SAVE LAT/LONG TO DATABASE ---
         AttendanceSession::create([
             'course_id' => $request->course_id,
             'session_title' => $request->session_title,
+            'week_number' => $request->week_number,
+            'mode' => $request->mode,
+            'latitude' => $latitude,     // Saves the extracted latitude
+            'longitude' => $longitude,   // Saves the extracted longitude
             'starts_at' => $startsAt,
             'ends_at' => $endsAt,
             'referral_code' => $code,
@@ -138,41 +167,57 @@ class LecturerController extends Controller
             return redirect('/lecturer/dashboard')->with('error', 'You do not have permission to view this.');
         }
 
-        // We don't generate a static QR code here anymore.
-        // The view will use JS to fetch dynamic ones.
+        // 1. Fetch all officially enrolled students for this course
+        $enrolledStudents = $session->course->students()->orderBy('name')->get();
+
+        // 2. Fetch attendance records for THIS session, keyed by student_id for easy lookup
+        $attendanceRecords = $session->attendance_records->keyBy('student_id');
+
+        // 3. Merge them together to figure out who is absent
+        $attendanceData = $enrolledStudents->map(function ($student) use ($attendanceRecords) {
+            $record = $attendanceRecords->get($student->id);
+
+            return (object) [
+                'student' => $student,
+                'status' => $record ? $record->status : 'absent',
+                'attended_at' => $record ? $record->attended_at : null,
+            ];
+        });
+
+        // 4. Calculate quick stats for the dashboard
+        $totalStudents = $enrolledStudents->count();
+        $presentCount = $attendanceData->where('status', 'present')->count();
+        $lateCount = $attendanceData->where('status', 'late')->count();
+        $absentCount = $attendanceData->where('status', 'absent')->count();
 
         return view('lecturer.show_session', [
             'session' => $session,
+            'attendanceData' => $attendanceData,
+            'totalStudents' => $totalStudents,
+            'presentCount' => $presentCount,
+            'lateCount' => $lateCount,
+            'absentCount' => $absentCount,
         ]);
     }
 
-    // --- NEW FUNCTION: GET DYNAMIC QR DATA ---
     public function getDynamicQrData(AttendanceSession $session)
     {
-        // Security check
         if ($session->course->lecturer_id !== Auth::id() || !$session->isActive()) {
              return response()->json(['error' => 'Unauthorized or expired'], 403);
         }
 
-        // 1. Create the data package
-        // It expires 35 seconds from now (giving a 5-second buffer for network lag)
         $data = [
             'session_id' => $session->id,
             'expires_at' => now()->addSeconds(15)->timestamp,
         ];
 
-        // 2. Encrypt the package into a single string token
         $encryptedToken = Crypt::encryptString(json_encode($data));
-
-        // 3. Generate the URL students will visit
         $url = route('student.attend.form', ['token' => $encryptedToken]);
 
-        // 4. Return the URL as JSON so Javascript can use it
         return response()->json([
             'qr_url' => $url
         ]);
     }
-    // -----------------------------------------
 
     public function manualAttendance(Request $request, AttendanceSession $session)
     {
@@ -192,6 +237,10 @@ class LecturerController extends Controller
 
         if (!$student) {
             return back()->with('error', 'User found but is not a student role.');
+        }
+
+        if (!$student->enrolledCourses()->where('course_id', $session->course_id)->exists()) {
+            $student->enrolledCourses()->attach($session->course_id);
         }
 
         if ($session->attendance_records()->where('student_id', $student->id)->exists()) {
@@ -226,5 +275,74 @@ class LecturerController extends Controller
 
         $fileName = "attendance_{$session->course->course_code}_{$session->starts_at->format('Y-m-d')}.pdf";
         return $pdf->download($fileName);
+    }
+
+    public function exportCourseCsv($course_id)
+    {
+        $course = Course::findOrFail($course_id);
+
+        if ($course->lecturer_id !== Auth::id()) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        // Fetch students via the course_student pivot table
+        $students = $course->students()->orderBy('name')->get();
+
+        // Fetch all sessions for this course, ordered sequentially by week and time
+        $sessions = AttendanceSession::where('course_id', $course_id)
+                                     ->orderBy('week_number')
+                                     ->orderBy('starts_at')
+                                     ->get();
+
+        $fileName = $course->course_code . '_Semester_' . $course->semester . '_Report.csv';
+
+        $headers = [
+            "Content-type"        => "text/csv",
+            "Content-Disposition" => "attachment; filename=$fileName",
+            "Pragma"              => "no-cache",
+            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+            "Expires"             => "0"
+        ];
+
+        $callback = function() use($students, $sessions) {
+            $file = fopen('php://output', 'w');
+
+            // 1. Create the Header Row
+            $headerRow = ['Student Name', 'Student ID'];
+            foreach ($sessions as $session) {
+                // Generates headers like: "Wk 1 (12/04)"
+                $headerRow[] = 'Wk ' . $session->week_number . ' (' . Carbon::parse($session->starts_at)->format('d/m') . ')';
+            }
+            $headerRow[] = 'Total Present (%)';
+            fputcsv($file, $headerRow);
+
+            // 2. Loop through each student to construct their attendance row
+            foreach ($students as $student) {
+                $row = [$student->name, $student->student_id];
+                $presentCount = 0;
+
+                foreach ($sessions as $session) {
+                    $record = AttendanceRecord::where('student_id', $student->id)
+                                              ->where('attendance_session_id', $session->id)
+                                              ->first();
+
+                    if ($record && in_array($record->status, ['present', 'late'])) {
+                        $row[] = '1'; // Marked as attended
+                        $presentCount++;
+                    } else {
+                        $row[] = '0'; // Absent
+                    }
+                }
+
+                // Calculate the final percentage across the whole semester
+                $percentage = count($sessions) > 0 ? round(($presentCount / count($sessions)) * 100) : 0;
+                $row[] = $percentage . '%';
+
+                fputcsv($file, $row);
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 }

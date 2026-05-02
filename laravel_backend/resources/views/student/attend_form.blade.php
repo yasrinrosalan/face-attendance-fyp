@@ -5,6 +5,7 @@
         @csrf
         <input type="hidden" name="encrypted_token" value="{{ $encryptedToken }}">
         <input type="hidden" name="_token_value" value="{{ $formToken }}">
+        <input type="hidden" id="session-mode" value="{{ $session->mode }}">
     </form>
 
     <div class="container py-4 font-sans-serif">
@@ -105,39 +106,44 @@
                 });
 
             // 2. Handle Click -> Get Location -> Send Request
+            // 2. Handle "Scan Face" Click
             verifyBtn.addEventListener('click', async () => {
                 statusMessage.classList.add('d-none');
                 verifyBtn.disabled = true;
                 loadingOverlay.classList.remove('d-none');
 
-                // --- STEP A: GET LOCATION ---
-                if (!navigator.geolocation) {
-                    showStatus("Geolocation is not supported by your browser.", 'danger');
-                    loadingOverlay.classList.add('d-none');
-                    verifyBtn.disabled = false;
-                    return;
+                // Check Mode
+                const sessionMode = document.getElementById('session-mode').value;
+
+                // If Online, skip GPS requirement. If Physical, force GPS.
+                if (sessionMode === 'online') {
+                    // Send with null coordinates
+                    await sendVerificationRequest(null, null);
+                } else {
+                    // Physical: Must get location
+                    if (!navigator.geolocation) {
+                        showStatus("Geolocation is not supported.", 'danger');
+                        loadingOverlay.classList.add('d-none');
+                        verifyBtn.disabled = false;
+                        return;
+                    }
+
+                    navigator.geolocation.getCurrentPosition(
+                        async (position) => {
+                                await sendVerificationRequest(position.coords.latitude, position
+                                    .coords.longitude);
+                            },
+                            (error) => {
+                                console.error("Location Error:", error);
+                                showStatus("Location access denied. Required for physical class.",
+                                    'danger');
+                                loadingOverlay.classList.add('d-none');
+                                verifyBtn.disabled = false;
+                            }, {
+                                enableHighAccuracy: true
+                            }
+                    );
                 }
-
-                navigator.geolocation.getCurrentPosition(
-                    // Success Callback
-                    async (position) => {
-                            const lat = position.coords.latitude;
-                            const long = position.coords.longitude;
-
-                            await sendVerificationRequest(lat, long);
-                        },
-                        // Error Callback
-                        (error) => {
-                            console.error("Location Error:", error);
-                            showStatus(
-                                "Location access denied. You must allow location to mark attendance.",
-                                'danger');
-                            loadingOverlay.classList.add('d-none');
-                            verifyBtn.disabled = false;
-                        }, {
-                            enableHighAccuracy: true
-                        } // Require GPS
-                );
             });
 
             async function sendVerificationRequest(lat, long) {

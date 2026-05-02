@@ -20,6 +20,10 @@ class CourseSeeder extends Seeder
                 'course_code' => 'CS101',
                 'course_name' => 'Introduction to Computer Science',
                 'lecturer_id' => $lecturer->id,
+                // --- ADDED NEW COLUMNS ---
+                'academic_year' => '2025/2026',
+                'semester' => 1,
+                // -------------------------
             ]);
 
             // Create another course
@@ -27,6 +31,10 @@ class CourseSeeder extends Seeder
                 'course_code' => 'MATH202',
                 'course_name' => 'Discrete Mathematics',
                 'lecturer_id' => $lecturer->id,
+                // --- ADDED NEW COLUMNS ---
+                'academic_year' => '2025/2026',
+                'semester' => 1,
+                // -------------------------
             ]);
         }
     }

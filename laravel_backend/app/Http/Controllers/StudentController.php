@@ -166,4 +166,35 @@ class StudentController extends Controller
              return redirect()->route('student.dashboard')->with('error', 'Invalid link.');
         }
     }
+
+    public function enrollCourse(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'course_code' => 'required|string'
+        ]);
+
+        // 1. Find the course by the code the student typed
+        $course = \App\Models\Course::where('course_code', $request->course_code)->first();
+
+        if (!$course) {
+            return back()->with('error', 'Course not found. Please check the code and try again.');
+        }
+
+        $student = \Illuminate\Support\Facades\Auth::user();
+
+        // 2. Check if the student is already enrolled to prevent duplicates
+        if ($student->enrolledCourses()->where('course_id', $course->id)->exists()) {
+            return back()->with('error', 'You are already enrolled in ' . $course->course_name . '.');
+        }
+
+        // 3. Automatically insert the record into the course_student table!
+        $student->enrolledCourses()->attach($course->id);
+
+        return back()->with('success', 'Success! You are now enrolled in ' . $course->course_name . '.');
+    }
+
+    public function scanner()
+{
+    return view('student.scanner');
+}
 }

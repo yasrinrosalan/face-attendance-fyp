@@ -53,7 +53,71 @@
                             class="form-label fw-bold small text-uppercase text-secondary">Session Title</label>
                         <input type="text" name="session_title" id="session_title"
                             class="form-control form-control-lg bg-light border-0 fw-medium"
-                            placeholder="e.g. Week 5: Midterm Review" required>
+                            placeholder="e.g. Lecture 1: Intro" required>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="week_number" class="form-label fw-bold small text-uppercase text-secondary">
+                            <i class="fas fa-calendar-week me-1"></i> Academic Week
+                        </label>
+                        <select name="week_number" id="week_number"
+                            class="form-select form-select-lg bg-light border-0 fw-medium" required>
+                            <option value="" disabled selected>Select Week...</option>
+                            @for ($i = 1; $i <= 14; $i++)
+                                <option value="{{ $i }}">Week {{ $i }}</option>
+                            @endfor
+                        </select>
+                        <div class="form-text small text-muted">
+                            Used to group data for the 14-week end-of-semester report.
+                        </div>
+                    </div>
+
+                    <!-- Session Mode -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold small text-uppercase text-secondary">Session Mode</label>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <!-- Added onchange trigger for Physical -->
+                                <input type="radio" class="btn-check" name="mode" id="mode_physical"
+                                    value="physical" onchange="toggleLocation(true)" checked>
+                                <label class="btn btn-outline-primary w-100 py-2" for="mode_physical">
+                                    <i class="fas fa-building me-1"></i> Physical
+                                </label>
+                            </div>
+                            <div class="col-6">
+                                <!-- Added onchange trigger for Online -->
+                                <input type="radio" class="btn-check" name="mode" id="mode_online" value="online"
+                                    onchange="toggleLocation(false)">
+                                <label class="btn btn-outline-primary w-100 py-2" for="mode_online">
+                                    <i class="fas fa-laptop-house me-1"></i> Online
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-text small text-muted mt-2">
+                            <strong>Physical:</strong> Enforces Geofencing (Students must be in class).<br>
+                            <strong>Online:</strong> Disables Geofencing (Students can attend remotely).
+                        </div>
+                    </div>
+
+                    <!-- NEW: Dynamic Faculty Location Dropdown -->
+                    <div class="mb-4" id="locationSelector">
+                        <label for="location_coords" class="form-label fw-bold small text-uppercase text-secondary">
+                            <i class="fas fa-map-marker-alt me-1"></i> Faculty / Location
+                        </label>
+                        <select name="location_coords" id="location_coords"
+                            class="form-select form-select-lg bg-light border-0 fw-medium" required>
+                            <option value="" disabled selected>Select Faculty Building...</option>
+                            <option value="3.546758,103.427747">Faculty of Computing</option>
+                            <option value="3.543012,103.428105">Faculty of Electrical and Electronics Engineering
+                                Technology</option>
+                            <option value="3.545123,103.429456">Faculty of Chemical and Process Engineering Technology
+                            </option>
+                            <option value="3.548987,103.430123">Faculty of Mechanical and Automotive Engineering
+                                Technology</option>
+                            <option value="3.549876,103.431987">Faculty of Manufacturing and Mechatronic Engineering
+                                Technology</option>
+                        </select>
+                        <div class="form-text small text-muted">Required to set the exact geofencing radius.</div>
                     </div>
 
                     <div class="mb-4">
@@ -73,7 +137,7 @@
                         </div>
                     </div>
 
-                    <div class="d-grid">
+                    <div class="d-grid mt-2">
                         {{-- Disable button only if on dashboard AND courses list is empty --}}
                         <button type="submit" class="btn btn-primary btn-lg fw-bold"
                             @if (isset($courses) && $courses->isEmpty() && !isset($course)) disabled @endif>
@@ -85,3 +149,30 @@
         </div>
     </div>
 </div>
+
+<!-- JavaScript to toggle the Faculty Dropdown -->
+<script>
+    function toggleLocation(isPhysical) {
+        const locationDiv = document.getElementById('locationSelector');
+        const locationSelect = document.getElementById('location_coords');
+
+        if (isPhysical) {
+            // Show dropdown and make it required
+            locationDiv.style.display = 'block';
+            locationSelect.setAttribute('required', 'required');
+        } else {
+            // Hide dropdown and remove required attribute
+            locationDiv.style.display = 'none';
+            locationSelect.removeAttribute('required');
+            locationSelect.value = ''; // Reset selection
+        }
+    }
+
+    // Run this once when the modal loads to ensure the initial state is correct
+    document.addEventListener('DOMContentLoaded', function() {
+        const physicalRadio = document.getElementById('mode_physical');
+        if (physicalRadio) {
+            toggleLocation(physicalRadio.checked);
+        }
+    });
+</script>
