@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 # --- Configuration ---
 # VGG-Face is good, but Facenet512 is often more accurate for verification
-MODEL_NAME = "Facenet512"
+MODEL_NAME = "VGG-Face"
 # MTCNN is slower but much more robust at finding faces than the default detector
 DETECTOR_BACKEND = "mtcnn"
 VERIFY_TEMP_FILE = "temp_verify.jpg"
