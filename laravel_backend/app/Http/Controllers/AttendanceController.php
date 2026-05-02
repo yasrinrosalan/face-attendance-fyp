@@ -19,23 +19,43 @@ class AttendanceController extends Controller
 
     public function __construct()
     {
-        $this->pythonServiceUrl = env('PYTHON_SERVICE_URL', 'http://127.0.0.1:5000');
+        $this->pythonServiceUrl = env('PYTHON_SERVICE_URL', 'https://ehadir-python.onrender.com');
+        // https://ehadir-python.onrender.com
+        // http://127.0.0.1:5000
     }
 
     public function enrollFace(Request $request)
     {
         $request->validate(['image' => 'required|string']);
         $student = Auth::user();
+
         try {
-            $response = Http::timeout(30)->post("{$this->pythonServiceUrl}/enroll", [
-                'student_id' => $student->id, 'image_base64' => $request->input('image'),
+            // INCREASED TIMEOUT TO 60 SECONDS to allow Render to wake up
+            $response = Http::timeout(60)->post("{$this->pythonServiceUrl}/enroll", [
+                'student_id' => $student->id,
+                'image_base64' => $request->input('image'),
             ]);
+
             if ($response->successful() && $response->json('status') === 'success') {
-                $student->face_template_path = "enrolled"; $student->save();
+                $student->face_template_path = "enrolled";
+                $student->save();
                 return response()->json(['success' => true, 'message' => 'Face enrolled successfully!']);
             }
-            return response()->json(['success' => false, 'message' => $response->json('message') ?? 'Failed.'], 400);
-        } catch (\Exception $e) { return response()->json(['success' => false, 'message' => 'Server Error.'], 500); }
+
+            // THE FIX: Unmask the error! Show EXACTLY what Python/Render rejected.
+            $errorDetail = $response->json('message') ?? $response->body() ?? 'No response body';
+            return response()->json([
+                'success' => false,
+                'message' => 'Python rejected: ' . $errorDetail . ' (Status: ' . $response->status() . ')'
+            ], 400);
+
+        } catch (\Exception $e) {
+            // THE FIX: Unmask Laravel server errors (like Connection Refused)
+            return response()->json([
+                'success' => false,
+                'message' => 'Laravel connection error: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     // --- MARK ATTENDANCE ---
