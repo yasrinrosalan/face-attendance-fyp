@@ -96,13 +96,21 @@
                 loadingOverlay.classList.remove('d-none');
 
                 // Draw video frame to canvas
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
+                // canvas.width = video.videoWidth;
+                // canvas.height = video.videoHeight;
+                // const context = canvas.getContext('2d');
+                // context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // Convert to Base64
+                // const imageBase64 = canvas.toDataURL('image/jpeg', 0.95).split(',')[1];
+
+                canvas.width = 640;
+                canvas.height = 480;
                 const context = canvas.getContext('2d');
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                // Convert to Base64
-                const imageBase64 = canvas.toDataURL('image/jpeg', 0.95).split(',')[1];
+                // 2. Compress the JPEG quality to 70% to drastically reduce text size
+                const imageBase64 = canvas.toDataURL('image/jpeg', 0.70).split(',')[1];
 
                 try {
                     const response = await fetch("{{ route('student.enroll.face') }}", {
