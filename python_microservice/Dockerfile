@@ -28,4 +28,4 @@ EXPOSE 10000
 
 # Command to run the application using Gunicorn for production
 # Assuming your Flask app is named 'app.py' and the Flask instance is 'app'
-CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--timeout", "120", "--workers", "2", "app:app"]
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:10000", "--workers", "1", "--threads", "2", "--timeout", "120"]
