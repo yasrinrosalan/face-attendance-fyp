@@ -24,7 +24,7 @@ class StudentController extends Controller
         })->pluck('course_id')->unique();
 
         $courses = Course::whereIn('id', $coursesIds)->with(['attendance_sessions.attendance_records' => function($query) use ($student) {
-            $query->where('student_id', $student->id);
+        $query->where('student_id', $student->id);
         }])->get();
 
         // 2. Calculate statistics

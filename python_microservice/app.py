@@ -1,5 +1,4 @@
 import os
-import base64
 import json
 import cv2 # OpenCV for image analysis
 import numpy as np # Number crunching
@@ -48,7 +47,6 @@ def check_liveness_potential(image_path):
     if texture_score < LIVENESS_TEXTURE_THRESHOLD:
         return False, "Liveness check failed: Image is too smooth or blurry. Often indicates a photo attack or poor camera."
 
-
     # --- Check 2: Glare/Lighting Analysis (Histogram) ---
     hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
     brightest_pixels_count = hist[255][0]
@@ -64,26 +62,7 @@ def check_liveness_potential(image_path):
     return True, "Liveness checks passed."
 
 
-# --- Helper Function: Decode Base64 (FIXED) ---
-def decode_base64_image(data_url, output_path):
-    try:
-        # FIX: Handle both full Data URLs and raw Base64 strings
-        if ',' in data_url:
-            # Split on the comma and take the second part (the actual data)
-            img_str = data_url.split(',')[1]
-        else:
-            # It's already raw base64
-            img_str = data_url
-
-        img_data = base64.b64decode(img_str)
-        with open(output_path, 'wb') as f:
-            f.write(img_data)
-        return True
-    except Exception as e:
-        print(f"Error decoding base64 image: {e}")
-        return False
-
-# --- Helper Functions: JSON management (Unchanged) ---
+# --- Helper Functions: JSON management ---
 def load_encodings():
     if os.path.exists(ENCODINGS_FILE):
         with open(ENCODINGS_FILE, 'r') as f:
@@ -106,19 +85,22 @@ def save_encodings(encodings):
 @app.route('/enroll', methods=['POST'])
 def enroll():
     try:
-        data = request.get_json()
-        student_id = str(data.get('student_id'))
-        image_base64 = data.get('image_base64')
+        # 1. Accept standard Form Data instead of JSON text
+        student_id = request.form.get('student_id')
+        
+        if 'file' not in request.files:
+            return jsonify({"status": "error", "message": "No image file uploaded"}), 400
+            
+        file = request.files['file']
 
-        if not student_id or not image_base64:
-            return jsonify({"status": "error", "message": "Missing data"}), 400
+        if not student_id or file.filename == '':
+            return jsonify({"status": "error", "message": "Missing student_id or file"}), 400
 
-        # 1. Decode image to temp file
-        if not decode_base64_image(image_base64, VERIFY_TEMP_FILE):
-            return jsonify({"status": "error", "message": "Failed to decode image"}), 500
+        # 2. Save physical file directly to server (Bypasses Cloudflare firewall!)
+        file.save(VERIFY_TEMP_FILE)
 
         try:
-            # --- STEP 2: PERFORM LIVENESS DETECTION ---
+            # --- STEP 3: PERFORM LIVENESS DETECTION ---
             is_live, liveness_msg = check_liveness_potential(VERIFY_TEMP_FILE)
             
             if not is_live:
@@ -126,8 +108,7 @@ def enroll():
                 return jsonify({"status": "error", "message": liveness_msg}), 400
             # ------------------------------------------
 
-
-            # 3. Generate embedding if liveness passed
+            # 4. Generate embedding if liveness passed
             embedding_obj = DeepFace.represent(
                 img_path=VERIFY_TEMP_FILE,
                 model_name=MODEL_NAME,
@@ -145,7 +126,7 @@ def enroll():
             if os.path.exists(VERIFY_TEMP_FILE):
                 os.remove(VERIFY_TEMP_FILE)
 
-        # 4. Save to JSON
+        # 5. Save to JSON
         encodings = load_encodings()
         encodings[student_id] = encoding
         save_encodings(encodings)
@@ -161,18 +142,20 @@ def enroll():
 @app.route('/verify', methods=['POST'])
 def verify():
     try:
-        data = request.get_json()
-        image_base64 = data.get('image_base64')
+        # 1. Accept standard Form Data instead of JSON text
+        if 'file' not in request.files:
+            return jsonify({"status": "error", "message": "No image file uploaded"}), 400
+            
+        file = request.files['file']
 
-        if not image_base64:
-            return jsonify({"status": "error", "message": "Missing image_base64"}), 400
+        if file.filename == '':
+            return jsonify({"status": "error", "message": "Missing file"}), 400
 
-        # 1. Decode
-        if not decode_base64_image(image_base64, VERIFY_TEMP_FILE):
-            return jsonify({"status": "error", "message": "Failed to decode image"}), 500
+        # 2. Save physical file directly to server
+        file.save(VERIFY_TEMP_FILE)
 
         try:
-            # --- STEP 2: PERFORM LIVENESS DETECTION ---
+            # --- STEP 3: PERFORM LIVENESS DETECTION ---
             is_live, liveness_msg = check_liveness_potential(VERIFY_TEMP_FILE)
             
             if not is_live:
@@ -180,7 +163,7 @@ def verify():
                 return jsonify({"status": "fail", "message": liveness_msg}), 200
             # ------------------------------------------
 
-            # 3. Generate embedding if liveness passed
+            # 4. Generate embedding if liveness passed
             embedding_obj = DeepFace.represent(
                 img_path=VERIFY_TEMP_FILE,
                 model_name=MODEL_NAME,
@@ -197,7 +180,7 @@ def verify():
             if os.path.exists(VERIFY_TEMP_FILE):
                 os.remove(VERIFY_TEMP_FILE)
 
-        # 4. Match against database
+        # 5. Match against database
         encodings = load_encodings()
         if not encodings:
             print("[Verify Debug] No enrolled students found in database.")
@@ -210,7 +193,6 @@ def verify():
 
         for student_id, stored_encoding in encodings.items():
             distance = cosine(new_encoding, stored_encoding)
-            # Print the score for each comparison!
             print(f"[Verify Debug] Comparing with Student ID {student_id}: Distance = {distance:.4f}")
             
             if distance < min_distance:
@@ -228,6 +210,7 @@ def verify():
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # --- /delete_enrollment Endpoint (Unchanged) ---
 @app.route('/delete_enrollment', methods=['POST'])

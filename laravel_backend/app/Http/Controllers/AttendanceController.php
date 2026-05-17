@@ -30,31 +30,33 @@ class AttendanceController extends Controller
         $student = Auth::user();
 
         try {
-            // INCREASED TIMEOUT TO 60 SECONDS to allow Render to wake up
-            $response = Http::timeout(60)->post("{$this->pythonServiceUrl}/enroll", [
-                'student_id' => $student->id,
-                'image_base64' => $request->input('image'),
-            ]);
+            // 1. Convert the Base64 text string back into a physical physical image
+            $imageData = base64_decode(preg_replace('#^data:image/\w+;base64,#i', '', $request->input('image')));
+            $tempPath = storage_path('app/public/temp_enroll_' . $student->id . '.jpg');
+            file_put_contents($tempPath, $imageData);
 
+            // 2. Send as a secure Multipart File Upload (Bypasses Cloudflare's JSON Firewall!)
+            $response = Http::timeout(60)
+                ->attach('file', file_get_contents($tempPath), 'face.jpg')
+                ->post("{$this->pythonServiceUrl}/enroll", [
+                    'student_id' => $student->id,
+                ]);
+
+            // 3. Clean up the temporary file from the server
+            @unlink($tempPath);
+
+            // 4. Handle Response
             if ($response->successful() && $response->json('status') === 'success') {
                 $student->face_template_path = "enrolled";
                 $student->save();
                 return response()->json(['success' => true, 'message' => 'Face enrolled successfully!']);
             }
 
-            // THE FIX: Unmask the error! Show EXACTLY what Python/Render rejected.
             $errorDetail = $response->json('message') ?? $response->body() ?? 'No response body';
-            return response()->json([
-                'success' => false,
-                'message' => 'Python rejected: ' . $errorDetail . ' (Status: ' . $response->status() . ')'
-            ], 400);
+            return response()->json(['success' => false, 'message' => 'Python rejected: ' . $errorDetail . ' (Status: ' . $response->status() . ')'], 400);
 
         } catch (\Exception $e) {
-            // THE FIX: Unmask Laravel server errors (like Connection Refused)
-            return response()->json([
-                'success' => false,
-                'message' => 'Laravel connection error: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => 'Laravel error: ' . $e->getMessage()], 500);
         }
     }
 
