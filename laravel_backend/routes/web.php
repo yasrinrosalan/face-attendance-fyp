@@ -83,7 +83,13 @@ Route::middleware('auth')->group(function () {
         Route::post('users', [AdminController::class, 'createUser'])->name('user.create');
         Route::delete('users/{user}', [AdminController::class, 'deleteUser'])->name('user.delete');
         Route::get('users/login-as/{user}', [AdminController::class, 'loginAs'])->name('user.loginas');
+
+        // --- UPDATED ROUTE: Use the new resetFace method ---
+        Route::post('users/{id}/reset-face', [AdminController::class, 'resetFace'])->name('users.resetFace');
+        // Note: I also kept your old route just in case something else relies on it, but the blade file uses this new one.
         Route::delete('users/{user}/enrollment', [AdminController::class, 'deleteEnrollment'])->name('user.enrollment.delete');
+        // ---------------------------------------------------
+
         Route::delete('sessions/{session}', [AdminController::class, 'deleteSession'])->name('session.delete');
 
         Route::get('sessions/{session}', [AdminController::class, 'showSession'])->name('session.show');

@@ -10,13 +10,13 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Hash; // <-- ADD THIS
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
 
 class AdminController extends Controller
 {
-    public function dashboard(Request $request) // <-- Inject Request
+    public function dashboard(Request $request)
     {
         $users = User::orderBy('created_at', 'desc')
             ->paginate(6, ['*'], 'users_page');
@@ -49,7 +49,7 @@ class AdminController extends Controller
         ]);
     }
 
-    // --- NEW: Generate QR Data for Admin View ---
+    // --- Generate QR Data for Admin View ---
     public function getDynamicQrData(AttendanceSession $session)
     {
         // 1. Create the data package
@@ -69,7 +69,7 @@ class AdminController extends Controller
         ]);
     }
 
-    // --- NEW METHOD: CREATE USER ---
+    // --- CREATE USER ---
     public function createUser(Request $request)
     {
         $request->validate([
@@ -91,7 +91,6 @@ class AdminController extends Controller
 
         return back()->with('success', 'New ' . ucfirst($request->role) . ' account created successfully.');
     }
-    // --- END NEW METHOD ---
 
     public function deleteUser(User $user)
     {
@@ -124,20 +123,24 @@ class AdminController extends Controller
         return redirect('/')->with('success', 'Impersonating ' . $user->name);
     }
 
+    // --- RESET STUDENT FACE ENROLLMENT ---
     public function deleteEnrollment(User $user)
     {
-        if (!$user->isStudent() || !$user->face_template_path) {
+        // Check if there is a template OR if they are requesting a change
+        if (!$user->isStudent() || (!$user->face_template_path && !$user->requesting_face_change)) {
             return back()->with('error', 'This user does not have a face enrollment to delete.');
         }
 
         try {
+            // 1. Tell Python server to wipe the JSON encoding
             $this->cleanupFaceData($user);
 
+            // 2. Clear Laravel Database and remove the yellow warning badge
             $user->face_template_path = null;
-            $user->requesting_face_change = false;
+            $user->requesting_face_change = 0; // MUST be 0 or false so the badge goes away
             $user->save();
 
-            return back()->with('success', 'Enrollment reset successfully.');
+            return back()->with('success', $user->name . '\'s face data has been reset successfully. They can now re-enroll.');
 
         } catch (\Exception $e) {
             return back()->with('error', 'Error deleting enrollment: ' . $e->getMessage());
@@ -149,7 +152,8 @@ class AdminController extends Controller
         try {
             $pythonServiceUrl = env('PYTHON_SERVICE_URL', 'http://127.0.0.1:5000');
 
-            Http::timeout(5)->post("{$pythonServiceUrl}/delete_enrollment", [
+            // Added withoutVerifying() to prevent cURL 77 errors on local Windows
+            Http::withoutVerifying()->timeout(5)->post("{$pythonServiceUrl}/delete_enrollment", [
                 'student_id' => $user->id,
             ]);
 

@@ -25,10 +25,6 @@
                                 @endif
                             </div>
                         </div>
-                        @if ($user->requesting_face_change)
-                            <span class="badge bg-warning text-dark mt-2 ms-5"><i
-                                    class="fas fa-exclamation-circle me-1"></i> Requesting Reset</span>
-                        @endif
                     </td>
                     <td class="px-4 py-3">
                         <span
@@ -36,7 +32,11 @@
                     </td>
                     <td class="px-4 py-3">
                         @if ($user->isStudent())
-                            @if ($user->face_template_path)
+                            @if ($user->requesting_face_change)
+                                <span class="badge bg-warning text-dark border border-warning rounded-pill shadow-sm">
+                                    <i class="fas fa-exclamation-circle me-1"></i> Reset Requested
+                                </span>
+                            @elseif ($user->face_template_path)
                                 <span
                                     class="badge bg-success-subtle text-success border border-success-subtle rounded-pill">Enrolled</span>
                             @else
@@ -62,7 +62,8 @@
                                             <i class="fas fa-sign-in-alt w-20 text-muted me-2"></i> Login As
                                         </a>
                                     </li>
-                                    @if ($user->isStudent() && $user->face_template_path)
+
+                                    @if ($user->isStudent() && ($user->face_template_path || $user->requesting_face_change))
                                         <li>
                                             <hr class="dropdown-divider">
                                         </li>
@@ -70,13 +71,22 @@
                                             <form action="{{ route('admin.user.enrollment.delete', $user->id) }}"
                                                 method="POST">
                                                 @csrf @method('DELETE')
-                                                <button class="dropdown-item text-warning"
-                                                    onclick="return confirm('Reset face data?');">
-                                                    <i class="fas fa-redo w-20 me-2"></i> Reset Face ID
-                                                </button>
+
+                                                @if ($user->requesting_face_change)
+                                                    <button class="dropdown-item text-danger fw-bold"
+                                                        onclick="return confirm('Approve face data reset for this student?');">
+                                                        <i class="fas fa-check-circle w-20 me-2"></i> Approve Reset
+                                                    </button>
+                                                @else
+                                                    <button class="dropdown-item text-warning"
+                                                        onclick="return confirm('Force reset this student\'s face data?');">
+                                                        <i class="fas fa-redo w-20 me-2"></i> Reset Face ID
+                                                    </button>
+                                                @endif
                                             </form>
                                         </li>
                                     @endif
+
                                     <li>
                                         <hr class="dropdown-divider">
                                     </li>

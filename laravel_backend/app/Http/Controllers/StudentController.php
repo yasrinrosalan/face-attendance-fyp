@@ -9,8 +9,8 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Str;
 use App\Models\AttendanceSession;
 use App\Models\Course;
-use App\Models\AttendanceRecord; // Ensure this is imported
-use Carbon\Carbon; // Import Carbon for dates
+use App\Models\AttendanceRecord;
+use Carbon\Carbon;
 
 class StudentController extends Controller
 {
@@ -50,7 +50,7 @@ class StudentController extends Controller
             ];
         });
 
-        // --- 3. CALENDAR LOGIC (The missing part) ---
+        // --- 3. CALENDAR LOGIC ---
         $today = now();
         $startOfMonth = $today->copy()->startOfMonth();
         $endOfMonth = $today->copy()->endOfMonth();
@@ -64,8 +64,6 @@ class StudentController extends Controller
             });
 
         $days = [];
-        // Add empty slots for days before the 1st of the month (alignment)
-        // dayOfWeek returns 0 (Sunday) to 6 (Saturday)
         $startDayOfWeek = $startOfMonth->dayOfWeek;
         for ($i = 0; $i < $startDayOfWeek; $i++) {
             $days[] = null;
@@ -87,13 +85,12 @@ class StudentController extends Controller
                 'is_today' => $currentDate->isToday(),
             ];
         }
-        // --------------------------------------------
 
         return view('student.dashboard', [
             'student' => $student,
             'courseStats' => $courseStats,
-            'days' => $days,   // <--- Now passing $days
-            'today' => $today, // <--- Now passing $today
+            'days' => $days,
+            'today' => $today,
         ]);
     }
 
@@ -108,9 +105,24 @@ class StudentController extends Controller
         return view('student.enroll_face');
     }
 
+    // --- FIX APPLIED HERE: Actually update the database ---
     public function requestFaceChange(Request $request)
     {
-        return back()->with('success', 'Request submitted to admin.');
+        $student = Auth::user();
+
+        if (!$student->face_template_path) {
+            return back()->with('error', 'You are not enrolled yet.');
+        }
+
+        if ($student->requesting_face_change) {
+            return back()->with('info', 'You have already requested a face data reset. Please wait for admin approval.');
+        }
+
+        // Set the boolean to true and save it to the database
+        $student->requesting_face_change = true;
+        $student->save();
+
+        return back()->with('success', 'Request sent to admin. You will be able to re-enroll once approved.');
     }
 
     public function findSession(Request $request)
@@ -194,7 +206,7 @@ class StudentController extends Controller
     }
 
     public function scanner()
-{
-    return view('student.scanner');
-}
+    {
+        return view('student.scanner');
+    }
 }
