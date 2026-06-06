@@ -68,28 +68,23 @@ class AttendanceController extends Controller
 
         $student = Auth::user();
 
-        // --- NEW: THE ENROLLMENT SECURITY CHECK ---
+        // --- NEW: THE SEAMLESS AUTO-ENROLLMENT LOGIC ---
+        $isNewlyEnrolled = false;
         $isEnrolled = $student->enrolledCourses()->where('course_id', $session->course_id)->exists();
 
         if (!$isEnrolled) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Access Denied: You cannot take attendance because you are not officially enrolled in this course. Please use the Course Code to enroll first.'
-            ], 403);
+            // Automatically enroll the student instead of blocking them!
+            $student->enrolledCourses()->attach($session->course_id);
+            $isNewlyEnrolled = true;
         }
-        // ------------------------------------------
+        // -----------------------------------------------
 
         // --- 2. GEOFENCING CHECK (Only for Physical) ---
         if ($session->mode === 'physical') {
 
-            // UPDATED: Dynamically pull the faculty coordinates from the session!
-            // We keep the old UMPSA coordinates as a fallback just in case an old session doesn't have it.
+            // Dynamically pull the faculty coordinates from the session
             $targetLat = $session->latitude ?? 3.5467;
             $targetLong = $session->longitude ?? 103.4277;
-
-            //2.9036343573297367, 101.84688895304195 rumah eco
-            //3.5467586070219017, 103.42774750274906 fkom
-            //3.541220151703538, 103.41806436304823 rumah sewa
 
             $allowedRadius = 200; // 200 meters
 
@@ -152,8 +147,17 @@ class AttendanceController extends Controller
                     \Illuminate\Support\Facades\Cache::forget("lecturer.dashboard.{$session->course->lecturer_id}");
                     session()->forget('_attendance_token');
 
+                    // --- DYNAMIC SUCCESS MESSAGE FOR SEAMLESS AUTO-ENROLL ---
+                    if ($isNewlyEnrolled) {
+                        return response()->json([
+                            'success' => true,
+                            'message' => "Attendance marked! You have also been automatically enrolled in {$session->course->course_code}."
+                        ]);
+                    }
+
                     $msg = ($status == 'late') ? 'Attendance marked (LATE).' : 'Attendance marked successfully!';
                     return response()->json(['success' => true, 'message' => $msg]);
+
                 } else {
                     return response()->json(['success' => false, 'message' => $data['message'] ?? 'Face mismatch.']);
                 }
@@ -161,7 +165,6 @@ class AttendanceController extends Controller
             return response()->json(['success' => false, 'message' => $data['message'] ?? 'Server Error.'], 500);
 
         } catch (\Exception $e) {
-            // Modified to show actual error for debugging
             return response()->json(['success' => false, 'message' => 'Error: ' . $e->getMessage()], 500);
         }
     }

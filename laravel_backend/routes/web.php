@@ -41,7 +41,9 @@ Route::middleware('auth')->group(function () {
         Route::get('enroll-face', [StudentController::class, 'showEnrollForm'])->name('enroll.form');
         Route::post('enroll-face', [AttendanceController::class, 'enrollFace'])->name('enroll.face');
         Route::post('request-face-change', [StudentController::class, 'requestFaceChange'])->name('request.face.change');
-        Route::post('find-session', [StudentController::class, 'findSession'])->name('find.session');
+
+        // --- UPDATED ROUTE: Matches the Manual Entry Modal perfectly ---
+        Route::post('session/find', [StudentController::class, 'findSession'])->name('session.find');
 
         // --- Student Self-Enrollment ---
         Route::post('enroll-course', [StudentController::class, 'enrollCourse'])->name('enroll.course');
@@ -72,8 +74,15 @@ Route::middleware('auth')->group(function () {
         Route::get('export/session/{session}', [AttendanceController::class, 'exportAttendance'])->name('attendance.export');
         Route::post('sessions/{session}/manual', [LecturerController::class, 'manualAttendance'])->name('session.manual_attend');
         Route::get('sessions/{session}/pdf', [LecturerController::class, 'downloadPdf'])->name('attendance.pdf');
+
+        // --- NEW: LECTURER APPROVES FACE RESET ---
+        // Note: The 'lecturer.' prefix is automatically applied from the group above.
+        Route::delete('student/{user}/enrollment', [LecturerController::class, 'deleteEnrollment'])->name('student.enrollment.delete');
     });
 
+    /* ==========================================
+       HIDING ADMIN FOR PSM THESIS SCOPE
+       ==========================================
     // Admin
     Route::middleware('is.admin')->prefix('admin')->name('admin.')->group(function () {
         Route::get('dashboard', [AdminController::class, 'dashboard'])->name('dashboard');
@@ -84,15 +93,13 @@ Route::middleware('auth')->group(function () {
         Route::delete('users/{user}', [AdminController::class, 'deleteUser'])->name('user.delete');
         Route::get('users/login-as/{user}', [AdminController::class, 'loginAs'])->name('user.loginas');
 
-        // --- UPDATED ROUTE: Use the new resetFace method ---
         Route::post('users/{id}/reset-face', [AdminController::class, 'resetFace'])->name('users.resetFace');
-        // Note: I also kept your old route just in case something else relies on it, but the blade file uses this new one.
         Route::delete('users/{user}/enrollment', [AdminController::class, 'deleteEnrollment'])->name('user.enrollment.delete');
-        // ---------------------------------------------------
 
         Route::delete('sessions/{session}', [AdminController::class, 'deleteSession'])->name('session.delete');
 
         Route::get('sessions/{session}', [AdminController::class, 'showSession'])->name('session.show');
         Route::get('sessions/{session}/qr-data', [AdminController::class, 'getDynamicQrData'])->name('session.qr_data');
     });
+    */
 });

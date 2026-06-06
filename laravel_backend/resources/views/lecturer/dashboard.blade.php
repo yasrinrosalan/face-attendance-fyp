@@ -19,28 +19,106 @@
             </div>
         </div>
 
-        @if (session('success'))
-            <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm rounded-3 d-flex align-items-center p-3 mb-4"
-                role="alert">
-                <i class="fas fa-check-circle fs-5 me-3"></i>
-                <div class="fw-medium">{{ session('success') }}</div>
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        @endif
-        @if (session('error'))
-            <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3 d-flex align-items-center p-3 mb-4"
-                role="alert">
-                <i class="fas fa-exclamation-circle fs-5 me-3"></i>
-                <div class="fw-medium">{{ session('error') }}</div>
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        @endif
+        @if (isset($activeSession) && $activeSession)
+            <div class="card border-danger border-opacity-25 shadow-sm rounded-4 mb-4 slide-down-fade"
+                style="background: linear-gradient(135deg, rgba(220, 53, 69, 0.08) 0%, rgba(220, 53, 69, 0.02) 100%);">
+                <div
+                    class="card-body p-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                    <div class="d-flex align-items-start">
+                        <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center me-3 shadow-sm flex-shrink-0"
+                            style="width: 48px; height: 48px;">
+                            <i class="fas fa-broadcast-tower fa-lg"></i>
+                        </div>
+                        <div>
+                            <h6 class="fw-bold text-danger mb-1 d-flex align-items-center">
+                                <span class="spinner-grow spinner-grow-sm text-danger me-2" role="status"></span>
+                                Live Now: {{ $activeSession->course->course_code }}
+                            </h6>
+                            <p class="mb-0 text-dark fw-medium small" style="line-height: 1.4;">
+                                <strong>{{ $activeSession->session_title }}</strong> is currently active. <br
+                                    class="d-none d-md-block">
+                                <span class="text-muted">Ends at {{ $activeSession->ends_at->format('h:i A') }} (in
+                                    {{ now()->diffInMinutes($activeSession->ends_at) }} mins).</span>
+                            </p>
+                        </div>
+                    </div>
 
+                    <div>
+                        <a href="{{ route('lecturer.session.show', $activeSession->id) }}"
+                            class="btn btn-danger fw-bold rounded-pill shadow-sm px-4 py-2 btn-hover-lift text-nowrap pulse-btn-danger border-0">
+                            <i class="fas fa-sign-in-alt me-2"></i>Return to Live View
+                        </a>
+                    </div>
+                </div>
+            </div>
+        @endif
+        @if (isset($pendingResetRequests) && $pendingResetRequests->count() > 0)
+            <div class="card border-warning border-opacity-50 shadow-sm rounded-4 mb-4 slide-down-fade"
+                style="background: linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 193, 7, 0.02) 100%);">
+                <div
+                    class="card-body p-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                    <div class="d-flex align-items-start">
+                        <div class="bg-warning text-dark rounded-circle d-flex align-items-center justify-content-center me-3 shadow-sm flex-shrink-0"
+                            style="width: 48px; height: 48px;">
+                            <i class="fas fa-exclamation-triangle fa-lg"></i>
+                        </div>
+                        <div>
+                            <h6 class="fw-bold text-warning-emphasis mb-1">Action Required: Biometric Resets</h6>
+                            <p class="mb-0 text-dark fw-medium small" style="line-height: 1.4;">
+                                You have <strong>{{ $pendingResetRequests->count() }}</strong> student(s) requesting a face
+                                data reset. <br class="d-none d-md-block">
+                                <span class="text-muted">Review these requests to allow the students to re-enroll their
+                                    faces.</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="dropdown">
+                            <button
+                                class="btn btn-warning fw-bold rounded-pill shadow-sm px-4 py-2 btn-hover-lift dropdown-toggle pulse-btn-warning border-0"
+                                type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                View Requests
+                            </button>
+                            <ul class="dropdown-menu border-0 shadow rounded-4 p-2 mt-2">
+                                @foreach ($pendingResetRequests as $student)
+                                    @php
+                                        // Find which of this lecturer's courses the student is in to link them to the right place
+                                        $course = $student->enrolledCourses->first();
+                                    @endphp
+                                    @if ($course)
+                                        <li>
+                                            <a class="dropdown-item rounded-3 py-2 fw-medium small d-flex align-items-center justify-content-between"
+                                                href="{{ route('lecturer.course.show', $course->id) }}">
+                                                <span><i class="fas fa-user text-muted me-2 opacity-50"></i>
+                                                    {{ $student->name }}</span>
+                                                <span
+                                                    class="badge bg-light text-secondary ms-3 border">{{ $course->course_code }}</span>
+                                            </a>
+                                        </li>
+                                    @endif
+                                @endforeach
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
         <div class="row g-4">
             <div class="col-lg-8">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="fw-bold text-dark m-0"><i class="fas fa-layer-group me-2 text-primary opacity-75"></i>Your
-                        Courses</h5>
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <div class="d-flex align-items-center">
+                        <h5 class="fw-bold text-dark m-0"><i
+                                class="fas fa-layer-group me-2 text-primary opacity-75"></i>Your
+                            Courses</h5>
+
+                        <span
+                            class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25 rounded-pill ms-3 px-3 py-2 fs-6 fw-bold shadow-sm"
+                            style="letter-spacing: 0.5px;">
+                            Semester {{ $currentSemester }} ({{ $currentYear }})
+                        </span>
+                    </div>
+
                     <button
                         class="btn btn-sm btn-light text-primary border shadow-sm fw-bold rounded-pill px-3 py-2 btn-hover-lift"
                         data-bs-toggle="modal" data-bs-target="#addCourseModal">
@@ -185,6 +263,59 @@
         .btn-hover-lift:hover {
             transform: translateY(-2px);
             box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+        }
+
+        /* NEW ANIMATIONS FOR WARNING & DANGER BANNERS */
+        @keyframes pulse-soft-warning {
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 10px rgba(255, 193, 7, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 193, 7, 0);
+            }
+        }
+
+        .pulse-btn-warning {
+            animation: pulse-soft-warning 2s infinite;
+        }
+
+        @keyframes pulse-soft-danger {
+            0% {
+                box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+            }
+        }
+
+        .pulse-btn-danger {
+            animation: pulse-soft-danger 2s infinite;
+        }
+
+        .slide-down-fade {
+            animation: slideDownFade 0.5s ease-out forwards;
+        }
+
+        @keyframes slideDownFade {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
     </style>
 @endsection

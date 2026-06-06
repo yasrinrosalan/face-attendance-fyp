@@ -19,6 +19,47 @@
             </div>
         </div>
 
+        @if (isset($activeSession) && $activeSession)
+            <div class="card border-primary border-opacity-25 shadow-sm rounded-4 mb-4 slide-down-fade"
+                style="background: linear-gradient(135deg, rgba(13, 110, 253, 0.08) 0%, rgba(13, 110, 253, 0.02) 100%);">
+                <div
+                    class="card-body p-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                    <div class="d-flex align-items-start">
+                        <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3 shadow-sm flex-shrink-0"
+                            style="width: 48px; height: 48px;">
+                            <i class="fas fa-satellite-dish fa-lg"></i>
+                        </div>
+                        <div>
+                            <h6 class="fw-bold text-primary mb-1 d-flex align-items-center">
+                                <span class="spinner-grow spinner-grow-sm text-danger me-2" role="status"></span>
+                                Live Session Active!
+                            </h6>
+                            <p class="mb-0 text-dark fw-medium small" style="line-height: 1.4;">
+                                <strong>{{ $activeSession->course->course_code }}</strong>
+                                ({{ $activeSession->session_title }}) is currently ongoing. <br class="d-none d-md-block">
+                                <span class="text-muted">Ends at {{ $activeSession->ends_at->format('h:i A') }} (in
+                                    {{ now()->diffInMinutes($activeSession->ends_at) }} mins).</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div>
+                        @if ($student->face_template_path)
+                            <button onclick="startScanning()"
+                                class="btn btn-primary fw-bold rounded-pill shadow-sm px-4 py-2 btn-hover-lift text-nowrap pulse-btn border-0">
+                                <i class="fas fa-camera-retro me-2"></i>Scan to Attend
+                            </button>
+                        @else
+                            <a href="{{ route('student.enrollment.page') }}"
+                                class="btn btn-danger fw-bold rounded-pill shadow-sm px-4 py-2 btn-hover-lift text-nowrap">
+                                <i class="fas fa-user-lock me-2"></i>Enroll Face First
+                            </a>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        @endif
+
         <div class="row g-4 mb-5">
             <div class="col-md-4">
                 <div class="card border-0 shadow-sm h-100 overflow-hidden rounded-4 card-hover">
@@ -57,7 +98,8 @@
                     <div class="card-body p-4 d-flex align-items-center justify-content-between">
                         <div>
                             <p class="text-muted small fw-bold text-uppercase mb-1 ls-1">Total Sessions</p>
-                            <h2 class="fw-bolder text-dark mb-0 display-6">{{ $courseStats->sum('attended_sessions') }}</h2>
+                            <h2 class="fw-bolder text-dark mb-0 display-6">{{ $courseStats->sum('attended_sessions') }}
+                            </h2>
                         </div>
                         <div class="bg-primary bg-opacity-10 text-primary rounded-circle p-3">
                             <i class="fas fa-calendar-check fa-lg"></i>
@@ -66,56 +108,65 @@
                 </div>
             </div>
 
-            <!-- Smart Scan Now Card (Detects Device) -->
             <div class="col-md-4">
-                <div class="card border-0 shadow-sm h-100 text-white rounded-4 card-hover cursor-pointer position-relative"
-                    style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);" onclick="startScanning()">
+                @if ($student->face_template_path)
+                    <div class="card border-0 shadow-sm h-100 text-white rounded-4 card-hover position-relative"
+                        style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);">
+                        <div class="card-body p-4 d-flex flex-column justify-content-center">
 
-                    <div class="card-body p-4 d-flex align-items-center justify-content-between">
-                        <div class="d-flex align-items-start">
-                            <div class="me-3 bg-white bg-opacity-25 rounded-circle p-3 shadow-sm text-center"
-                                style="width: 54px; height: 54px;">
-                                <i class="fas fa-camera fa-lg text-white" id="scan-icon"></i>
+                            <div class="d-flex align-items-center justify-content-between cursor-pointer mb-3"
+                                onclick="startScanning()">
+                                <div class="d-flex align-items-start">
+                                    <div class="me-3 bg-white bg-opacity-25 rounded-circle p-3 shadow-sm text-center"
+                                        style="width: 54px; height: 54px;">
+                                        <i class="fas fa-camera fa-lg text-white" id="scan-icon"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="fw-bold mb-1 fs-5" id="scan-title">Scan Now</h6>
+                                        <p class="small text-white-50 mb-0 fw-medium" style="line-height: 1.3;">
+                                            Tap here to scan class QR code.
+                                        </p>
+                                    </div>
+                                </div>
+                                <i class="fas fa-chevron-right text-white opacity-50 fa-2x"></i>
                             </div>
-                            <div>
-                                <h6 class="fw-bold mb-1 fs-5" id="scan-title">Scan Now</h6>
-                                <p class="small text-white-50 mb-0 fw-medium" id="scan-desc" style="line-height: 1.3;">
-                                    Click here to scan the QR code and mark attendance.
-                                </p>
+
+                            <hr class="border-white border-opacity-25 my-2">
+                            <div class="text-center mt-1">
+                                <a href="#"
+                                    class="text-white-50 small fw-bold text-decoration-none hover-text-white transition-all"
+                                    data-bs-toggle="modal" data-bs-target="#manualCodeModal">
+                                    <i class="fas fa-keyboard me-1"></i> Camera broken? Enter code manually
+                                </a>
+                            </div>
+
+                        </div>
+                    </div>
+                @else
+                    <div class="card border-0 shadow-sm h-100 text-white rounded-4 position-relative"
+                        style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); cursor: not-allowed; opacity: 0.95;">
+                        <div class="card-body p-4 d-flex align-items-center justify-content-between">
+                            <div class="d-flex align-items-start">
+                                <div class="me-3 bg-white bg-opacity-25 rounded-circle p-3 shadow-sm text-center"
+                                    style="width: 54px; height: 54px;">
+                                    <i class="fas fa-lock fa-lg text-white opacity-75"></i>
+                                </div>
+                                <div>
+                                    <h6 class="fw-bold mb-1 fs-5 opacity-75">Scan Locked</h6>
+                                    <p class="small text-white-50 mb-0 fw-medium" style="line-height: 1.3;">
+                                        <i class="fas fa-exclamation-triangle text-warning me-1 opacity-75"></i> Enroll your
+                                        face template first to unlock.
+                                    </p>
+                                </div>
                             </div>
                         </div>
-                        <i class="fas fa-chevron-right text-white opacity-50 fa-2x"></i>
                     </div>
-
-                    <!-- Hidden Input for iOS Native Camera -->
-                    <input type="file" id="nativeCameraInput" accept="image/*" capture="environment" class="d-none">
-
-                    <!-- Hidden Div required by the QR library to process the iOS photo -->
-                    <div id="hidden-qr-reader" class="d-none"></div>
-
-                </div>
+                @endif
             </div>
         </div>
 
         <div class="row g-4">
             <div class="col-lg-8">
-
-                @if (session('success'))
-                    <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm rounded-3 d-flex align-items-center p-3"
-                        role="alert">
-                        <i class="fas fa-check-circle fs-5 me-3"></i>
-                        <div class="fw-medium">{{ session('success') }}</div>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                @endif
-                @if (session('error'))
-                    <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3 d-flex align-items-center p-3"
-                        role="alert">
-                        <i class="fas fa-exclamation-circle fs-5 me-3"></i>
-                        <div class="fw-medium">{{ session('error') }}</div>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                @endif
 
                 <div class="card border-0 shadow-sm mb-5 rounded-4 bg-light bg-gradient">
                     <div class="card-body p-4 p-md-5">
@@ -255,14 +306,43 @@
         </div>
     </div>
 
-    <!-- Include HTML5-QRCode Library to decode the photo taken by the iOS native camera -->
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <div class="modal fade" id="manualCodeModal" tabindex="-1" aria-labelledby="manualCodeModalLabel"
+        aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <h5 class="modal-title fw-bold text-dark" id="manualCodeModalLabel">
+                        <i class="fas fa-keyboard text-primary me-2"></i>Enter Session Code
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <p class="text-muted small mb-4">If you cannot scan the QR code, ask your lecturer for the 6-character
+                        session code displayed on their screen.</p>
+
+                    <form action="{{ route('student.session.find') }}" method="POST">
+                        @csrf
+                        <div class="mb-4">
+                            <input type="text" name="referral_code"
+                                class="form-control form-control-lg text-center fw-bold text-uppercase custom-focus-ring"
+                                placeholder="e.g., A1B2C3" maxlength="6" required
+                                style="letter-spacing: 2px; font-size: 1.5rem;">
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg rounded-pill fw-bold btn-hover-lift">
+                                Verify & Continue to Face Scan <i class="fas fa-arrow-right ms-2"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
         function startScanning() {
             const ua = navigator.userAgent;
             const isAndroid = /Android/i.test(ua);
-            const isIOS = /iPhone|iPad|iPod/i.test(ua);
 
             if (isAndroid) {
                 // 1. ANDROID: Try to open a native barcode scanner app
@@ -277,48 +357,11 @@
                     }
                 }, 1000);
 
-            } else if (isIOS) {
-                // 2. iOS (iPhone/iPad): Trigger native camera via hidden input
-                document.getElementById('nativeCameraInput').click();
-
             } else {
-                // 3. DESKTOP / LAPTOP: Redirect to the built-in web scanner!
-                // Since laptops don't have native camera apps, they must use the browser scanner.
+                // 2. iOS & DESKTOP: Redirect to the built-in web scanner!
                 window.location.href = "{{ route('student.scanner') }}";
             }
         }
-
-        // Listen for when the iPhone student takes the photo
-        document.getElementById('nativeCameraInput').addEventListener('change', function(e) {
-            if (e.target.files.length == 0) return;
-
-            // Change UI to show it's processing the photo
-            document.getElementById('scan-title').innerText = "Processing...";
-            document.getElementById('scan-desc').innerText = "Reading QR code from photo...";
-            document.getElementById('scan-icon').className = "fas fa-spinner fa-spin fa-lg text-white";
-
-            const file = e.target.files[0];
-            const html5QrCode = new Html5Qrcode("hidden-qr-reader");
-
-            // Scan the image file for a QR code
-            html5QrCode.scanFile(file, true)
-                .then(decodedText => {
-                    // Success! Redirect the student to the URL found in the QR code
-                    window.location.href = decodedText;
-                })
-                .catch(err => {
-                    // Failure! No QR code was detected in the photo
-                    alert(
-                        "No QR code detected in that photo. Please try again and make sure the QR code is clear and in focus.");
-
-                    // Reset UI
-                    document.getElementById('scan-title').innerText = "Scan Now";
-                    document.getElementById('scan-desc').innerText =
-                        "Click here to scan the QR code and mark attendance.";
-                    document.getElementById('scan-icon').className = "fas fa-camera fa-lg text-white";
-                    e.target.value = ""; // Clear the input so they can try again
-                });
-        });
     </script>
 
     <style>
@@ -358,6 +401,10 @@
 
         .cursor-pointer {
             cursor: pointer;
+        }
+
+        .hover-text-white:hover {
+            color: #ffffff !important;
         }
 
         .custom-focus-ring:focus-within {
@@ -414,6 +461,41 @@
             height: 10px;
             border-radius: 50%;
             display: inline-block;
+        }
+
+        /* NEW ANIMATIONS FOR LIVE BANNER */
+        @keyframes pulse-soft {
+            0% {
+                box-shadow: 0 0 0 0 rgba(13, 110, 253, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 10px rgba(13, 110, 253, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(13, 110, 253, 0);
+            }
+        }
+
+        .pulse-btn {
+            animation: pulse-soft 2s infinite;
+        }
+
+        .slide-down-fade {
+            animation: slideDownFade 0.5s ease-out forwards;
+        }
+
+        @keyframes slideDownFade {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
     </style>
 @endsection

@@ -18,18 +18,25 @@ class StudentController extends Controller
     {
         $student = Auth::user();
 
-        // 1. Find courses the student has attended
-        $coursesIds = AttendanceSession::whereHas('attendance_records', function($q) use ($student) {
-            $q->where('student_id', $student->id);
-        })->pluck('course_id')->unique();
-
-        $courses = Course::whereIn('id', $coursesIds)->with(['attendance_sessions.attendance_records' => function($query) use ($student) {
+        // 1. Fetch courses the student is officially enrolled in
+        $courses = $student->enrolledCourses()->with(['attendance_sessions.attendance_records' => function($query) use ($student) {
             $query->where('student_id', $student->id);
         }])->get();
+
+        // --- NEW FEATURE: CHECK FOR ACTIVE LIVE SESSION ---
+        $activeSession = AttendanceSession::whereIn('course_id', $student->enrolledCourses->pluck('id'))
+            ->where('starts_at', '<=', now())
+            ->where('ends_at', '>=', now())
+            ->with('course')
+            ->orderBy('ends_at', 'asc') // If multiple, get the one ending soonest
+            ->first();
+        // ---------------------------------------------------
 
         // 2. Calculate statistics
         $courseStats = $courses->map(function ($course) use ($student) {
             $totalSessions = $course->attendance_sessions->count();
+
+            // Count how many sessions this specific student has an attendance record for
             $attendedSessions = $course->attendance_sessions->filter(function($session) {
                  return $session->attendance_records->isNotEmpty();
             })->count();
@@ -91,6 +98,7 @@ class StudentController extends Controller
             'courseStats' => $courseStats,
             'days' => $days,
             'today' => $today,
+            'activeSession' => $activeSession, // <-- Pass active session to the view
         ]);
     }
 
@@ -115,14 +123,16 @@ class StudentController extends Controller
         }
 
         if ($student->requesting_face_change) {
-            return back()->with('info', 'You have already requested a face data reset. Please wait for admin approval.');
+            // Updated text to reference the lecturer instead of admin
+            return back()->with('info', 'You have already requested a face data reset. Please wait for your lecturer\'s approval.');
         }
 
         // Set the boolean to true and save it to the database
         $student->requesting_face_change = true;
         $student->save();
 
-        return back()->with('success', 'Request sent to admin. You will be able to re-enroll once approved.');
+        // Updated text to reference the lecturer instead of admin
+        return back()->with('success', 'Request sent to your lecturer. You will be able to re-enroll once approved.');
     }
 
     public function findSession(Request $request)

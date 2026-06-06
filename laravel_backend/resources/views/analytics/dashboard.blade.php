@@ -10,7 +10,28 @@
                 <p class="text-muted small fw-medium mb-0">Real-time insights into student attendance and engagement.</p>
             </div>
 
-            <div class="d-flex gap-2">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+
+                @if (Auth::user()->isLecturer() && isset($availableCourses) && $availableCourses->count() > 0)
+                    <div class="d-flex align-items-center bg-white px-3 py-1 rounded-pill shadow-sm border border-light">
+                        <i class="fas fa-filter text-primary me-2 opacity-75"></i>
+                        <form method="GET" action="{{ url()->current() }}" class="m-0">
+                            <select name="course_id"
+                                class="form-select form-select-sm border-0 fw-bold text-dark cursor-pointer bg-transparent py-1"
+                                onchange="this.form.submit()"
+                                style="outline: none; box-shadow: none; padding-left: 0; min-width: 140px;">
+                                <option value="">All Courses Overview</option>
+                                @foreach ($availableCourses as $course)
+                                    <option value="{{ $course->id }}"
+                                        {{ isset($selectedCourseId) && $selectedCourseId == $course->id ? 'selected' : '' }}>
+                                        {{ $course->course_code }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </form>
+                    </div>
+                @endif
+
                 @if (Auth::user()->isAdmin())
                     <div
                         class="px-4 py-2 bg-primary text-white rounded-pill shadow-sm small fw-bold d-flex align-items-center">
@@ -35,7 +56,7 @@
                             <div>
                                 <p class="text-uppercase text-muted small fw-bold mb-1 ls-1">Total Sessions</p>
                                 <h2 class="fw-bolder text-dark mb-0 display-6 tracking-tight">
-                                    {{ count($attendanceOverTime['labels']) }}</h2>
+                                    {{ count($attendanceOverTime['labels'] ?? []) }}</h2>
                             </div>
                             <div class="bg-primary bg-opacity-10 text-primary rounded-3 p-3">
                                 <i class="fas fa-calendar-check fa-lg"></i>
@@ -73,7 +94,7 @@
                             <div>
                                 <p class="text-uppercase text-muted small fw-bold mb-1 ls-1">Active Courses</p>
                                 <h2 class="fw-bolder text-success mb-0 display-6 tracking-tight">
-                                    {{ count($attendanceByCourse['labels']) }}</h2>
+                                    {{ count($attendanceByCourse['labels'] ?? []) }}</h2>
                             </div>
                             <div class="bg-success bg-opacity-10 text-success rounded-3 p-3">
                                 <i class="fas fa-book-open fa-lg"></i>
@@ -90,9 +111,10 @@
                     <div
                         class="card-header bg-white border-bottom-0 pt-4 px-4 d-flex justify-content-between align-items-center rounded-top-4">
                         <h6 class="fw-bold text-dark mb-0">Attendance Trends</h6>
-                        <button
+
+                        <button onclick="exportChart()"
                             class="btn btn-sm btn-light border shadow-sm fw-medium rounded-pill px-3 btn-hover-lift text-primary">
-                            <i class="fas fa-download me-1"></i> Export
+                            <i class="fas fa-download me-1"></i> Export Image
                         </button>
                     </div>
                     <div class="card-body px-4 pb-4 pt-2">
@@ -105,7 +127,9 @@
                                     <p class="fw-medium">No trend data available yet.</p>
                                 </div>
                             @else
-                                <canvas id="attendanceOverTimeChart"></canvas>
+                                <div id="chart-wrapper" style="background-color: white; height: 100%; width: 100%;">
+                                    <canvas id="attendanceOverTimeChart"></canvas>
+                                </div>
                             @endif
                         </div>
                     </div>
@@ -118,7 +142,7 @@
                         <h6 class="fw-bold text-danger mb-1 d-flex align-items-center">
                             <i class="fas fa-exclamation-triangle me-2"></i> At-Risk Students
                         </h6>
-                        <small class="text-muted fw-medium">Lowest attendance counts</small>
+                        <small class="text-muted fw-medium">Below 80% Attendance</small>
                     </div>
                     <div class="card-body p-0 flex-grow-1">
                         <ul class="list-group list-group-flush h-100">
@@ -137,11 +161,19 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        <div class="text-end bg-light rounded px-2 py-1 border border-light">
-                                            <span
-                                                class="h5 fw-bolder text-danger mb-0 d-block lh-1">{{ $student->attendance_records_count }}</span>
-                                            <span class="text-muted fw-bold"
-                                                style="font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.5px;">Sessions</span>
+                                        <div class="text-end d-flex align-items-center gap-2">
+                                            <a href="mailto:{{ $student->email }}?subject=Urgent%3A%20Class%20Attendance%20Warning&body=Hi%20{{ urlencode($student->name) }},%0A%0AWe%20noticed%20your%20course%20attendance%20has%20dropped%20to%20{{ $student->attendance_percentage }}%25.%20Please%20ensure%20you%20attend%20upcoming%20classes%20to%20avoid%20academic%20penalties.%0A%0AThank%20you."
+                                                class="btn btn-sm btn-light text-primary border shadow-sm rounded-circle btn-hover-lift"
+                                                style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;"
+                                                title="Send Email Warning">
+                                                <i class="fas fa-envelope"></i>
+                                            </a>
+                                            <div class="bg-light rounded px-2 py-1 border border-light">
+                                                <span
+                                                    class="h5 fw-bolder text-danger mb-0 d-block lh-1">{{ $student->attendance_percentage }}%</span>
+                                                <span class="text-muted fw-bold"
+                                                    style="font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.5px;">Attendance</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </li>
@@ -165,14 +197,14 @@
             <div class="col-lg-4">
                 <div class="card border-0 shadow-sm h-100 rounded-4">
                     <div class="card-header bg-white border-bottom-0 pt-4 px-4 rounded-top-4">
-                        <h6 class="fw-bold text-dark mb-0">Course Distribution</h6>
+                        <h6 class="fw-bold text-dark mb-0">{{ $doughnutChartData['title'] ?? 'Course Distribution' }}</h6>
                     </div>
                     <div class="card-body p-4 pt-2">
                         <div style="position: relative; height: 220px; width: 100%;">
-                            @if (empty($attendanceByCourse['labels']))
+                            @if (empty($doughnutChartData['labels']))
                                 <div class="d-flex flex-column align-items-center justify-content-center h-100 text-muted">
                                     <i class="fas fa-chart-pie fa-2x mb-2 opacity-25"></i>
-                                    <p class="small fw-medium">No course data.</p>
+                                    <p class="small fw-medium">No data available.</p>
                                 </div>
                             @else
                                 <canvas id="attendanceByCourseChart"></canvas>
@@ -260,14 +292,27 @@
 @push('scripts')
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        // NEW: Export Chart Function
+        function exportChart() {
+            const canvas = document.getElementById('attendanceOverTimeChart');
+            if (!canvas) {
+                alert('No chart data available to export.');
+                return;
+            }
 
+            // Create a temporary link and trigger the download
+            const link = document.createElement('a');
+            link.download = 'Attendance_Trends_Report.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
             // --- 1. Attendance Trends (Line Chart) ---
             const ctxLine = document.getElementById('attendanceOverTimeChart');
             if (ctxLine) {
                 const ctx = ctxLine.getContext('2d');
 
-                // Create a beautiful gradient
                 const gradient = ctx.createLinearGradient(0, 0, 0, 400);
                 gradient.addColorStop(0, 'rgba(32, 58, 141, 0.25)'); // Brand Blue
                 gradient.addColorStop(1, 'rgba(32, 58, 141, 0.0)');
@@ -288,7 +333,7 @@
                             pointHoverRadius: 7,
                             pointBorderWidth: 2,
                             fill: true,
-                            tension: 0.4 // Smooth curves
+                            tension: 0.4
                         }]
                     },
                     options: {
@@ -352,22 +397,25 @@
                 });
             }
 
-            // --- 2. Course Distribution (Doughnut) ---
+            // --- 2. Context-Aware Doughnut Chart ---
             const ctxDoughnut = document.getElementById('attendanceByCourseChart');
             if (ctxDoughnut) {
+                const chartTitle = "{!! $doughnutChartData['title'] ?? 'Course Distribution' !!}";
+
+                let bgColors = [];
+                if (chartTitle === 'Attendance Status') {
+                    bgColors = ['#10b981', '#f59e0b', '#ef4444']; // Emerald(Present), Amber(Late), Red(Absent)
+                } else {
+                    bgColors = ['#1e3c72', '#2980b9', '#64748b', '#8b5cf6', '#3b82f6']; // Standard Branding
+                }
+
                 new Chart(ctxDoughnut, {
                     type: 'doughnut',
                     data: {
-                        labels: {!! json_encode($attendanceByCourse['labels'] ?? []) !!},
+                        labels: {!! json_encode($doughnutChartData['labels'] ?? []) !!},
                         datasets: [{
-                            data: {!! json_encode($attendanceByCourse['data'] ?? []) !!},
-                            backgroundColor: [
-                                '#1e3c72', // Dark Blue
-                                '#2980b9', // Lighter Blue
-                                '#64748b', // Slate
-                                '#f59e0b', // Amber
-                                '#10b981' // Emerald
-                            ],
+                            data: {!! json_encode($doughnutChartData['data'] ?? []) !!},
+                            backgroundColor: bgColors,
                             borderWidth: 0,
                             hoverOffset: 6
                         }]
