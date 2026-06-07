@@ -42,101 +42,168 @@
             </div>
         </div>
 
-        <div class="d-flex justify-content-between align-items-center mb-3 mt-5">
-            <h5 class="fw-bold text-dark m-0"><i class="fas fa-history me-2 text-primary opacity-75"></i>Session History
-            </h5>
-        </div>
+        <div class="row">
+            <div class="col-lg-7 mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold text-dark m-0"><i class="fas fa-history me-2 text-primary opacity-75"></i>Session
+                        History</h5>
+                </div>
 
-        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-            <div class="card-body p-0">
-                <div class="list-group list-group-flush">
-                    @forelse($course->attendance_sessions as $session)
-                        <div class="list-group-item border-bottom border-light p-4 transition-all hover-bg-light">
-                            <div class="row align-items-center g-3">
+                <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                    <div class="card-body p-0">
+                        <div class="list-group list-group-flush">
+                            @forelse($course->attendance_sessions as $session)
+                                <div class="list-group-item border-bottom border-light p-4 transition-all hover-bg-light">
+                                    <div class="row align-items-center g-3">
 
-                                <div class="col-md-8 col-lg-9">
-                                    <h5 class="fw-bold text-dark mb-2">{{ $session->session_title }}</h5>
+                                        <div class="col-md-8 col-lg-8">
+                                            <h5 class="fw-bold text-dark mb-2">{{ $session->session_title }}</h5>
 
-                                    <div class="d-flex flex-wrap gap-2 mb-3">
-                                        <span
-                                            class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 rounded-pill px-2 py-1">
-                                            Week {{ $session->week_number }}
-                                        </span>
-
-                                        @if ($session->mode === 'online')
-                                            <span
-                                                class="badge bg-dark bg-opacity-10 text-dark border border-dark border-opacity-10 rounded-pill px-2 py-1"
-                                                title="Online Class">
-                                                <i class="fas fa-laptop-house"></i> Online
-                                            </span>
-                                        @else
-                                            <span
-                                                class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-10 rounded-pill px-2 py-1"
-                                                title="Physical Class">
-                                                <i class="fas fa-building"></i> Physical
-                                            </span>
-                                        @endif
-
-                                        <span class="badge bg-light text-muted border px-2 py-1 font-monospace"
-                                            title="Class Code">
-                                            <i class="fas fa-key me-1 opacity-50"></i>{{ $session->referral_code }}
-                                        </span>
-                                    </div>
-
-                                    <div class="d-flex flex-wrap align-items-center text-muted small fw-medium gap-3">
-                                        <div class="d-flex align-items-center">
-                                            <i class="far fa-calendar-alt me-2 text-primary opacity-75"></i>
-                                            {{ $session->starts_at->format('M d, Y') }}
-                                        </div>
-                                        <div class="d-flex align-items-center">
-                                            <i class="far fa-clock me-2 text-primary opacity-75"></i>
-                                            {{ $session->starts_at->format('h:i A') }} -
-                                            {{ $session->ends_at->format('h:i A') }}
-                                        </div>
-                                        <div class="d-flex align-items-center">
-                                            @if ($session->isActive())
+                                            <div class="d-flex flex-wrap gap-2 mb-3">
                                                 <span
-                                                    class="text-success fw-bold bg-success bg-opacity-10 px-2 py-1 rounded-1 d-inline-flex align-items-center">
-                                                    <span class="spinner-grow spinner-grow-sm text-success me-2"
-                                                        role="status" style="width: 0.5rem; height: 0.5rem;"></span> Active
-                                                    Now
+                                                    class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 rounded-pill px-2 py-1">
+                                                    Week {{ $session->week_number }}
+                                                </span>
+
+                                                @if ($session->mode === 'online')
+                                                    <span
+                                                        class="badge bg-dark bg-opacity-10 text-dark border border-dark border-opacity-10 rounded-pill px-2 py-1"
+                                                        title="Online Class">
+                                                        <i class="fas fa-laptop-house"></i> Online
+                                                    </span>
+                                                @else
+                                                    <span
+                                                        class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-10 rounded-pill px-2 py-1"
+                                                        title="Physical Class">
+                                                        <i class="fas fa-building"></i> Physical
+                                                    </span>
+                                                @endif
+
+                                                <span class="badge bg-light text-muted border px-2 py-1 font-monospace"
+                                                    title="Class Code">
+                                                    <i class="fas fa-key me-1 opacity-50"></i>{{ $session->referral_code }}
+                                                </span>
+                                            </div>
+
+                                            <div
+                                                class="d-flex flex-wrap align-items-center text-muted small fw-medium gap-3">
+                                                <div class="d-flex align-items-center">
+                                                    <i class="far fa-calendar-alt me-2 text-primary opacity-75"></i>
+                                                    {{ $session->starts_at->format('M d, Y') }}
+                                                </div>
+                                                <div class="d-flex align-items-center">
+                                                    <i class="far fa-clock me-2 text-primary opacity-75"></i>
+                                                    {{ $session->starts_at->format('h:i A') }} -
+                                                    {{ $session->ends_at->format('h:i A') }}
+                                                </div>
+                                                <div class="d-flex align-items-center">
+                                                    @if ($session->isActive())
+                                                        <span
+                                                            class="text-success fw-bold bg-success bg-opacity-10 px-2 py-1 rounded-1 d-inline-flex align-items-center">
+                                                            <span class="spinner-grow spinner-grow-sm text-success me-2"
+                                                                role="status"
+                                                                style="width: 0.5rem; height: 0.5rem;"></span> Active Now
+                                                        </span>
+                                                    @else
+                                                        <span class="text-secondary d-inline-flex align-items-center">
+                                                            <i class="fas fa-check-circle me-1 opacity-50"></i> Completed
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="col-md-4 col-lg-4 text-md-end">
+                                            <a href="{{ route('lecturer.session.show', $session->id) }}"
+                                                class="btn btn-outline-primary fw-bold px-4 py-2 rounded-pill btn-hover-lift d-block d-md-inline-block w-100 w-md-auto">
+                                                Reports <i class="fas fa-chevron-right ms-1 small"></i>
+                                            </a>
+                                        </div>
+
+                                    </div>
+                                </div>
+                            @empty
+                                <div class="text-center py-5 bg-white">
+                                    <div class="bg-light rounded-circle d-inline-flex p-4 mb-3">
+                                        <i class="fas fa-calendar-times fa-3x text-primary opacity-50"></i>
+                                    </div>
+                                    <h5 class="fw-bold text-dark mb-1">No Sessions Yet</h5>
+                                    <p class="text-muted small mb-4">You haven't created any attendance sessions for this
+                                        course.</p>
+                                    <button type="button"
+                                        class="btn btn-primary px-4 py-2 rounded-pill fw-bold shadow-sm btn-hover-lift"
+                                        data-bs-toggle="modal" data-bs-target="#createSessionModal">
+                                        <i class="fas fa-plus me-2"></i> Create First Session
+                                    </button>
+                                </div>
+                            @endforelse
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-5 mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold text-dark m-0"><i class="fas fa-users me-2 text-primary opacity-75"></i>Enrolled
+                        Students</h5>
+                    <span class="badge bg-secondary rounded-pill">{{ $course->students->count() }}</span>
+                </div>
+
+                <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                    <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="bg-light sticky-top" style="z-index: 1;">
+                                <tr class="text-secondary small text-uppercase">
+                                    <th class="px-4 py-3 border-0">Student Info</th>
+                                    <th class="px-4 py-3 border-0 text-end">Action / Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse($course->students as $student)
+                                    <tr>
+                                        <td class="px-4 py-3">
+                                            <div class="fw-bold text-dark">{{ $student->name }}</div>
+                                            <div class="small text-muted font-monospace">{{ $student->student_id }}</div>
+                                        </td>
+                                        <td class="px-4 py-3 text-end">
+                                            @if ($student->requesting_face_change)
+                                                <form
+                                                    action="{{ route('lecturer.student.enrollment.delete', $student->id) }}"
+                                                    method="POST">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit"
+                                                        class="btn btn-sm btn-danger fw-bold rounded-pill shadow-sm btn-hover-lift"
+                                                        onclick="return confirm('Approve face data reset for {{ $student->name }}?');">
+                                                        <i class="fas fa-check-circle me-1"></i> Approve Reset
+                                                    </button>
+                                                </form>
+                                            @elseif ($student->face_template_path)
+                                                <span
+                                                    class="badge bg-success-subtle text-success border border-success-subtle rounded-pill">
+                                                    <i class="fas fa-check me-1"></i> Face Enrolled
                                                 </span>
                                             @else
-                                                <span class="text-secondary d-inline-flex align-items-center">
-                                                    <i class="fas fa-check-circle me-1 opacity-50"></i> Completed
+                                                <span
+                                                    class="badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill">
+                                                    Pending Face
                                                 </span>
                                             @endif
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="col-md-4 col-lg-3 text-md-end">
-                                    <a href="{{ route('lecturer.session.show', $session->id) }}"
-                                        class="btn btn-outline-primary fw-bold px-4 py-2 rounded-pill btn-hover-lift d-block d-md-inline-block w-100 w-md-auto">
-                                        Manage & Reports <i class="fas fa-chevron-right ms-1 small"></i>
-                                    </a>
-                                </div>
-
-                            </div>
-                        </div>
-                    @empty
-                        <div class="text-center py-5 bg-white">
-                            <div class="bg-light rounded-circle d-inline-flex p-4 mb-3">
-                                <i class="fas fa-calendar-times fa-3x text-primary opacity-50"></i>
-                            </div>
-                            <h5 class="fw-bold text-dark mb-1">No Sessions Yet</h5>
-                            <p class="text-muted small mb-4">You haven't created any attendance sessions for this course.
-                            </p>
-                            <button type="button"
-                                class="btn btn-primary px-4 py-2 rounded-pill fw-bold shadow-sm btn-hover-lift"
-                                data-bs-toggle="modal" data-bs-target="#createSessionModal">
-                                <i class="fas fa-plus me-2"></i> Create First Session
-                            </button>
-                        </div>
-                    @endforelse
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="2" class="text-center text-muted py-4">No students are enrolled in
+                                            this course yet.</td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
+
     </div>
 
     @include('lecturer.partials.create_session_modal')

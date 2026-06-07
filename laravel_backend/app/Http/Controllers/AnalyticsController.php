@@ -8,110 +8,155 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\Course;
 use App\Models\User;
 use App\Models\AttendanceSession;
+use App\Models\AttendanceRecord;
 
 class AnalyticsController extends Controller
 {
-    /**
-     * Show the analytics dashboard.
-     */
-    public function show()
+    public function show(Request $request)
     {
         $user = Auth::user();
 
-        // --- 1. Data for "Attendance Over Time" (Line Chart) ---
+        // Catch the course filter from the URL dropdown
+        $selectedCourseId = $request->query('course_id');
 
-        // Get all sessions, with their attendance count
+        // --- 0. Get Courses for the Dropdown Filter ---
+        $availableCourses = collect();
+        if ($user->isLecturer()) {
+            $availableCourses = Course::where('lecturer_id', $user->id)->get();
+        }
+
+        // --- 1. Data for "Attendance Over Time" (Line Chart) ---
         $sessionsQuery = AttendanceSession::query()
             ->withCount('attendance_records')
             ->orderBy('starts_at', 'asc');
 
-        // If the user is a lecturer, only show their sessions
         if ($user->isLecturer()) {
-            $sessionsQuery->whereHas('course', function ($query) use ($user) {
-                $query->where('lecturer_id', $user->id);
-            });
+            if ($selectedCourseId) {
+                // Filter by specific course
+                $sessionsQuery->where('course_id', $selectedCourseId);
+            } else {
+                // Show all lecturer's courses
+                $sessionsQuery->whereHas('course', function ($query) use ($user) {
+                    $query->where('lecturer_id', $user->id);
+                });
+            }
         }
 
         $sessions = $sessionsQuery->get();
 
-        // Format data for Chart.js
         $attendanceOverTime = [
             'labels' => $sessions->map(function ($session) {
-                // Format the date (e.g., "Nov 02") and add the session title
                 return $session->starts_at->format('M d') . ' - ' . $session->session_title;
             }),
             'data' => $sessions->pluck('attendance_records_count'),
         ];
 
 
-        // --- 2. Data for "Attendance by Course" (Doughnut Chart) ---
+        // --- 2. Data for Doughnut Chart (CONTEXT-AWARE FEATURE) ---
+        $doughnutLabels = [];
+        $doughnutData = [];
+        $doughnutTitle = 'Course Distribution';
 
-        // Get all courses
-        $coursesQuery = Course::query();
+        if ($selectedCourseId) {
+            // CONTEXT A: A specific course is selected -> Show Present vs Late vs Absent
+            $doughnutTitle = 'Attendance Status';
 
-        if ($user->isLecturer()) {
-            $coursesQuery->where('lecturer_id', $user->id);
+            // Get all attendance records specifically for this course
+            $records = AttendanceRecord::whereHas('attendance_session', function($q) use ($selectedCourseId) {
+                $q->where('course_id', $selectedCourseId);
+            })->get();
+
+            $present = $records->where('status', 'present')->count();
+            $late = $records->where('status', 'late')->count();
+            $absent = $records->where('status', 'absent')->count();
+
+            // Only populate chart if data exists
+            if ($present > 0 || $late > 0 || $absent > 0) {
+                $doughnutLabels = ['Present', 'Late', 'Absent'];
+                $doughnutData = [$present, $late, $absent];
+            }
+        } else {
+            // CONTEXT B: "All Courses" selected -> Show Course Distribution
+            $coursesQuery = Course::query();
+            if ($user->isLecturer()) {
+                $coursesQuery->where('lecturer_id', $user->id);
+            }
+
+            $courses = $coursesQuery->with('attendance_sessions.attendance_records')->get();
+
+            foreach ($courses as $course) {
+                $count = $course->attendance_sessions->sum(function ($session) {
+                    return $session->attendance_records->count();
+                });
+
+                // Only show courses that actually have attendance data
+                if ($count > 0) {
+                    $doughnutLabels[] = $course->course_code;
+                    $doughnutData[] = $count;
+                }
+            }
         }
 
-        // Eager load the relationships we need
-        $courses = $coursesQuery->with('attendance_sessions.attendance_records')->get();
-
-        $courseLabels = [];
-        $courseData = [];
-
-        foreach ($courses as $course) {
-            // Add the course code to labels
-            $courseLabels[] = $course->course_code;
-            // Sum up all records from all sessions for this course
-            $courseData[] = $course->attendance_sessions->sum(function ($session) {
-                return $session->attendance_records->count();
-            });
-        }
-
-        $attendanceByCourse = [
-            'labels' => $courseLabels,
-            'data' => $courseData,
+        $doughnutChartData = [
+            'title' => $doughnutTitle,
+            'labels' => $doughnutLabels,
+            'data' => $doughnutData,
         ];
 
 
-        // --- 3. Data for "At-Risk" (Least Active) Students (MODIFIED) ---
+        // --- 3. Data for "At-Risk" Students ---
+        $dangerThreshold = 80;
+        $studentsQuery = User::where('role', 'student');
 
         if ($user->isLecturer()) {
-            // LECTURER VIEW: Get students relevant to THIS lecturer's courses
+            if ($selectedCourseId) {
+                $courseIds = [$selectedCourseId];
+            } else {
+                $courseIds = Course::where('lecturer_id', $user->id)->pluck('id')->toArray();
+            }
 
-            // 1. Get IDs of all sessions created by this lecturer
-            $mySessionIds = AttendanceSession::whereHas('course', function($q) use ($user) {
-                $q->where('lecturer_id', $user->id);
-            })->pluck('id');
-
-            // 2. Find students who have at least one record in these sessions
-            // AND count their attendance ONLY for these sessions
-            $leastActiveStudents = User::whereHas('attendance_records', function($q) use ($mySessionIds) {
-                $q->whereIn('attendance_session_id', $mySessionIds);
+            $studentsQuery->whereHas('enrolledCourses', function($q) use ($courseIds) {
+                $q->whereIn('courses.id', $courseIds);
             })
-            ->withCount(['attendance_records' => function($q) use ($mySessionIds) {
-                // Only count attendance for MY sessions
-                $q->whereIn('attendance_session_id', $mySessionIds);
+            ->with(['enrolledCourses' => function($q) use ($courseIds) {
+                $q->whereIn('courses.id', $courseIds)->withCount('attendance_sessions');
             }])
-            ->orderBy('attendance_records_count', 'asc') // Lowest first
-            ->limit(5)
-            ->get();
-
+            ->withCount(['attendance_records' => function($q) use ($courseIds) {
+                $q->whereHas('attendance_session', function($q2) use ($courseIds) {
+                    $q2->whereIn('course_id', $courseIds);
+                });
+            }]);
         } else {
-            // ADMIN VIEW: Global lowest attendance
-            $leastActiveStudents = User::where('role', 'student')
-                ->withCount('attendance_records')
-                ->orderBy('attendance_records_count', 'asc')
-                ->limit(5)
-                ->get();
+            $studentsQuery->with(['enrolledCourses' => function($q) {
+                $q->withCount('attendance_sessions');
+            }])
+            ->withCount('attendance_records');
         }
 
+        $leastActiveStudents = $studentsQuery->get()->map(function ($student) {
+            $expectedSessions = $student->enrolledCourses->sum('attendance_sessions_count');
+            $attendedSessions = $student->attendance_records_count;
+            $percentage = $expectedSessions > 0 ? round(($attendedSessions / $expectedSessions) * 100) : 100;
 
-        // Pass all data to the new view
+            $student->attendance_percentage = $percentage;
+            $student->expected_sessions = $expectedSessions;
+
+            return $student;
+        })
+        ->filter(function ($student) use ($dangerThreshold) {
+            return $student->expected_sessions > 0 && $student->attendance_percentage < $dangerThreshold;
+        })
+        ->sortBy('attendance_percentage')
+        ->take(5)
+        ->values();
+
+        // Pass everything to the view
         return view('analytics.dashboard', [
             'attendanceOverTime' => $attendanceOverTime,
-            'attendanceByCourse' => $attendanceByCourse,
+            'doughnutChartData' => $doughnutChartData, // <-- Updated Variable
             'leastActiveStudents' => $leastActiveStudents,
+            'availableCourses' => $availableCourses ?? collect(),
+            'selectedCourseId' => $selectedCourseId,
         ]);
     }
 }

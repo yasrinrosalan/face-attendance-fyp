@@ -9,8 +9,8 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Str;
 use App\Models\AttendanceSession;
 use App\Models\Course;
-use App\Models\AttendanceRecord; // Ensure this is imported
-use Carbon\Carbon; // Import Carbon for dates
+use App\Models\AttendanceRecord;
+use Carbon\Carbon;
 
 class StudentController extends Controller
 {
@@ -18,18 +18,25 @@ class StudentController extends Controller
     {
         $student = Auth::user();
 
-        // 1. Find courses the student has attended
-        $coursesIds = AttendanceSession::whereHas('attendance_records', function($q) use ($student) {
-            $q->where('student_id', $student->id);
-        })->pluck('course_id')->unique();
-
-        $courses = Course::whereIn('id', $coursesIds)->with(['attendance_sessions.attendance_records' => function($query) use ($student) {
-        $query->where('student_id', $student->id);
+        // 1. Fetch courses the student is officially enrolled in
+        $courses = $student->enrolledCourses()->with(['attendance_sessions.attendance_records' => function($query) use ($student) {
+            $query->where('student_id', $student->id);
         }])->get();
+
+        // --- NEW FEATURE: CHECK FOR ACTIVE LIVE SESSION ---
+        $activeSession = AttendanceSession::whereIn('course_id', $student->enrolledCourses->pluck('id'))
+            ->where('starts_at', '<=', now())
+            ->where('ends_at', '>=', now())
+            ->with('course')
+            ->orderBy('ends_at', 'asc') // If multiple, get the one ending soonest
+            ->first();
+        // ---------------------------------------------------
 
         // 2. Calculate statistics
         $courseStats = $courses->map(function ($course) use ($student) {
             $totalSessions = $course->attendance_sessions->count();
+
+            // Count how many sessions this specific student has an attendance record for
             $attendedSessions = $course->attendance_sessions->filter(function($session) {
                  return $session->attendance_records->isNotEmpty();
             })->count();
@@ -50,7 +57,7 @@ class StudentController extends Controller
             ];
         });
 
-        // --- 3. CALENDAR LOGIC (The missing part) ---
+        // --- 3. CALENDAR LOGIC ---
         $today = now();
         $startOfMonth = $today->copy()->startOfMonth();
         $endOfMonth = $today->copy()->endOfMonth();
@@ -64,8 +71,6 @@ class StudentController extends Controller
             });
 
         $days = [];
-        // Add empty slots for days before the 1st of the month (alignment)
-        // dayOfWeek returns 0 (Sunday) to 6 (Saturday)
         $startDayOfWeek = $startOfMonth->dayOfWeek;
         for ($i = 0; $i < $startDayOfWeek; $i++) {
             $days[] = null;
@@ -87,13 +92,13 @@ class StudentController extends Controller
                 'is_today' => $currentDate->isToday(),
             ];
         }
-        // --------------------------------------------
 
         return view('student.dashboard', [
             'student' => $student,
             'courseStats' => $courseStats,
-            'days' => $days,   // <--- Now passing $days
-            'today' => $today, // <--- Now passing $today
+            'days' => $days,
+            'today' => $today,
+            'activeSession' => $activeSession, // <-- Pass active session to the view
         ]);
     }
 
@@ -108,9 +113,26 @@ class StudentController extends Controller
         return view('student.enroll_face');
     }
 
+    // --- FIX APPLIED HERE: Actually update the database ---
     public function requestFaceChange(Request $request)
     {
-        return back()->with('success', 'Request submitted to admin.');
+        $student = Auth::user();
+
+        if (!$student->face_template_path) {
+            return back()->with('error', 'You are not enrolled yet.');
+        }
+
+        if ($student->requesting_face_change) {
+            // Updated text to reference the lecturer instead of admin
+            return back()->with('info', 'You have already requested a face data reset. Please wait for your lecturer\'s approval.');
+        }
+
+        // Set the boolean to true and save it to the database
+        $student->requesting_face_change = true;
+        $student->save();
+
+        // Updated text to reference the lecturer instead of admin
+        return back()->with('success', 'Request sent to your lecturer. You will be able to re-enroll once approved.');
     }
 
     public function findSession(Request $request)
@@ -194,7 +216,7 @@ class StudentController extends Controller
     }
 
     public function scanner()
-{
-    return view('student.scanner');
-}
+    {
+        return view('student.scanner');
+    }
 }

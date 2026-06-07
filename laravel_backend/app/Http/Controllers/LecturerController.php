@@ -5,9 +5,12 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use App\Models\Course;
 use App\Models\AttendanceSession;
 use App\Models\AttendanceRecord;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 use PDF;
@@ -18,9 +21,7 @@ class LecturerController extends Controller
     {
         $lecturer = Auth::user();
 
-        // --- ADDED: SEMESTER FILTERING LOGIC ---
-        // In a real production app, these could be fetched from a 'Settings' table.
-        // For now, we set the active semester statically to filter the dashboard.
+        // --- SEMESTER FILTERING LOGIC ---
         $currentYear = '2025/2026';
         $currentSemester = 1;
 
@@ -30,7 +31,6 @@ class LecturerController extends Controller
             ->where('semester', $currentSemester)
             ->withCount('attendance_sessions')
             ->get();
-        // ----------------------------------------
 
         // Calculate stats for the latest session of each course
         $coursesWithStats = $courses->map(function ($course) {
@@ -61,9 +61,36 @@ class LecturerController extends Controller
             return $course;
         });
 
+        // --- FETCH PENDING BIOMETRIC RESET REQUESTS ---
+        $pendingResetRequests = User::where('role', 'student')
+            ->where('requesting_face_change', true)
+            ->whereHas('enrolledCourses', function ($query) use ($lecturer) {
+                $query->where('lecturer_id', $lecturer->id);
+            })
+            // Eager load only the courses taught by this lecturer to optimize the view
+            ->with(['enrolledCourses' => function ($query) use ($lecturer) {
+                $query->where('lecturer_id', $lecturer->id);
+            }])
+            ->get();
+
+        // --- NEW: FETCH ACTIVE LIVE SESSION ---
+        $activeSession = AttendanceSession::whereHas('course', function ($query) use ($lecturer) {
+            $query->where('lecturer_id', $lecturer->id);
+        })
+        ->where('starts_at', '<=', now())
+        ->where('ends_at', '>=', now())
+        ->with('course')
+        ->orderBy('ends_at', 'asc') // If multiple, get the one ending soonest
+        ->first();
+        // ----------------------------------------
+
         return view('lecturer.dashboard', [
             'lecturer' => $lecturer,
             'courses' => $courses,
+            'currentYear' => $currentYear,
+            'currentSemester' => $currentSemester,
+            'pendingResetRequests' => $pendingResetRequests,
+            'activeSession' => $activeSession, // <-- Pass to view
         ]);
     }
 
@@ -72,8 +99,8 @@ class LecturerController extends Controller
         $request->validate([
             'course_name' => 'required|string|max:255',
             'course_code' => 'required|string|max:20',
-            'academic_year' => 'required|string|max:20', // e.g., "2025/2026"
-            'semester' => 'required|integer|min:1|max:3', // e.g., 1 or 2
+            'academic_year' => 'required|string|max:20',
+            'semester' => 'required|integer|min:1|max:3',
         ]);
 
         Course::create([
@@ -102,14 +129,13 @@ class LecturerController extends Controller
 
     public function createSession(Request $request)
     {
-        // --- UPDATED: ADDED LOCATION VALIDATION ---
         $request->validate([
             'course_id' => 'required|exists:courses,id',
             'session_title' => 'required|string|max:255',
             'duration' => 'required|integer|min:1',
             'mode' => 'required|in:physical,online',
             'week_number' => 'required|integer|min:1|max:14',
-            'location_coords' => 'required_if:mode,physical', // Requires dropdown if mode is physical
+            'location_coords' => 'required_if:mode,physical',
         ]);
 
         $lecturer = Auth::user();
@@ -119,7 +145,6 @@ class LecturerController extends Controller
             return back()->with('error', 'You do not own this course.');
         }
 
-        // --- NEW: EXTRACT LAT/LONG FROM DROPDOWN ---
         $latitude = null;
         $longitude = null;
 
@@ -130,20 +155,18 @@ class LecturerController extends Controller
                 $longitude = trim($coords[1]);
             }
         }
-        // -------------------------------------------
 
         $code = Str::upper(Str::random(6));
         $startsAt = now();
         $endsAt = $startsAt->copy()->addMinutes($request->duration);
 
-        // --- UPDATED: SAVE LAT/LONG TO DATABASE ---
         AttendanceSession::create([
             'course_id' => $request->course_id,
             'session_title' => $request->session_title,
             'week_number' => $request->week_number,
             'mode' => $request->mode,
-            'latitude' => $latitude,     // Saves the extracted latitude
-            'longitude' => $longitude,   // Saves the extracted longitude
+            'latitude' => $latitude,
+            'longitude' => $longitude,
             'starts_at' => $startsAt,
             'ends_at' => $endsAt,
             'referral_code' => $code,
@@ -167,13 +190,9 @@ class LecturerController extends Controller
             return redirect('/lecturer/dashboard')->with('error', 'You do not have permission to view this.');
         }
 
-        // 1. Fetch all officially enrolled students for this course
         $enrolledStudents = $session->course->students()->orderBy('name')->get();
-
-        // 2. Fetch attendance records for THIS session, keyed by student_id for easy lookup
         $attendanceRecords = $session->attendance_records->keyBy('student_id');
 
-        // 3. Merge them together to figure out who is absent
         $attendanceData = $enrolledStudents->map(function ($student) use ($attendanceRecords) {
             $record = $attendanceRecords->get($student->id);
 
@@ -184,7 +203,6 @@ class LecturerController extends Controller
             ];
         });
 
-        // 4. Calculate quick stats for the dashboard
         $totalStudents = $enrolledStudents->count();
         $presentCount = $attendanceData->where('status', 'present')->count();
         $lateCount = $attendanceData->where('status', 'late')->count();
@@ -231,7 +249,7 @@ class LecturerController extends Controller
             return back()->with('error', 'Unauthorized action.');
         }
 
-        $student = \App\Models\User::where('email', $request->student_email)
+        $student = User::where('email', $request->student_email)
                     ->where('role', 'student')
                     ->first();
 
@@ -247,7 +265,7 @@ class LecturerController extends Controller
             return back()->with('error', "Student '{$student->name}' is already present.");
         }
 
-        \App\Models\AttendanceRecord::create([
+        AttendanceRecord::create([
             'attendance_session_id' => $session->id,
             'student_id' => $student->id,
             'attended_at' => now(),
@@ -285,10 +303,8 @@ class LecturerController extends Controller
             abort(403, 'Unauthorized action.');
         }
 
-        // Fetch students via the course_student pivot table
         $students = $course->students()->orderBy('name')->get();
 
-        // Fetch all sessions for this course, ordered sequentially by week and time
         $sessions = AttendanceSession::where('course_id', $course_id)
                                      ->orderBy('week_number')
                                      ->orderBy('starts_at')
@@ -307,16 +323,13 @@ class LecturerController extends Controller
         $callback = function() use($students, $sessions) {
             $file = fopen('php://output', 'w');
 
-            // 1. Create the Header Row
             $headerRow = ['Student Name', 'Student ID'];
             foreach ($sessions as $session) {
-                // Generates headers like: "Wk 1 (12/04)"
                 $headerRow[] = 'Wk ' . $session->week_number . ' (' . Carbon::parse($session->starts_at)->format('d/m') . ')';
             }
             $headerRow[] = 'Total Present (%)';
             fputcsv($file, $headerRow);
 
-            // 2. Loop through each student to construct their attendance row
             foreach ($students as $student) {
                 $row = [$student->name, $student->student_id];
                 $presentCount = 0;
@@ -327,14 +340,13 @@ class LecturerController extends Controller
                                               ->first();
 
                     if ($record && in_array($record->status, ['present', 'late'])) {
-                        $row[] = '1'; // Marked as attended
+                        $row[] = '1';
                         $presentCount++;
                     } else {
-                        $row[] = '0'; // Absent
+                        $row[] = '0';
                     }
                 }
 
-                // Calculate the final percentage across the whole semester
                 $percentage = count($sessions) > 0 ? round(($presentCount / count($sessions)) * 100) : 0;
                 $row[] = $percentage . '%';
 
@@ -344,5 +356,30 @@ class LecturerController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    public function deleteEnrollment(User $user)
+    {
+        if (!$user->isStudent() || (!$user->face_template_path && !$user->requesting_face_change)) {
+            return back()->with('error', 'This student does not have a face enrollment to delete.');
+        }
+
+        try {
+            $pythonServiceUrl = env('PYTHON_SERVICE_URL', 'http://127.0.0.1:5000');
+
+            Http::withoutVerifying()->timeout(5)->post("{$pythonServiceUrl}/delete_enrollment", [
+                'student_id' => $user->id,
+            ]);
+
+            $user->face_template_path = null;
+            $user->requesting_face_change = 0;
+            $user->save();
+
+            return back()->with('success', $user->name . '\'s face data has been reset successfully. They can now re-enroll.');
+
+        } catch (\Exception $e) {
+            Log::error("Failed to call /delete_enrollment endpoint: " . $e->getMessage());
+            return back()->with('error', 'Error connecting to Python server. ' . $e->getMessage());
+        }
     }
 }
