@@ -56,6 +56,12 @@
                             <p class="text-muted">Please enter your details to sign in.</p>
                         </div>
 
+                        @if (session('success'))
+                            <div class="alert alert-success mb-4">
+                                {{ session('success') }}
+                            </div>
+                        @endif
+
                         <form method="POST" action="{{ route('login') }}">
                             @csrf
 
@@ -120,12 +126,6 @@
 
                             <div class="collapse mt-3" id="demoCreds">
                                 <div class="card card-body bg-light border-0 rounded-3 small shadow-sm">
-                                    <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
-                                        <span class="fw-bold text-primary"><i class="fas fa-user-shield me-1"></i>
-                                            Admin:</span>
-                                        <span class="font-monospace text-muted">admin@demo.com <span
-                                                class="text-light-muted">/</span> password</span>
-                                    </div>
                                     <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                                         <span class="fw-bold text-primary"><i class="fas fa-chalkboard-teacher me-1"></i>
                                             Lecturer:</span>

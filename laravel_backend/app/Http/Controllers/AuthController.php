@@ -6,6 +6,9 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password; // Added for password reset
+use Illuminate\Auth\Events\PasswordReset; // Added for password reset
+use Illuminate\Support\Str;              // Added for password reset
 use App\Models\User;
 
 class AuthController extends Controller
@@ -58,7 +61,7 @@ class AuthController extends Controller
             $request->session()->regenerate();
             $user = Auth::user();
 
-            if ($user->isAdmin()) return redirect()->intended('/admin/dashboard');
+            // Note: Admin check removed based on updated system scope
             if ($user->isLecturer()) return redirect()->intended('/lecturer/dashboard');
             if ($user->isStudent()) return redirect()->intended('/student/dashboard');
 
@@ -77,19 +80,65 @@ class AuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        // --- MODIFIED: Removed ->with('success', ...) ---
         return redirect('/');
     }
 
-    // --- Return to Admin ---
-    public function returnToAdmin()
+    // ==========================================
+    // --- Forgot / Reset Password Methods ---
+    // ==========================================
+
+    // 1. Show the form to request a reset link
+    public function showLinkRequestForm()
     {
-        if (session()->has('admin_impersonating_id')) {
-            $admin_id = session('admin_impersonating_id');
-            session()->forget('admin_impersonating_id');
-            Auth::login(User::find($admin_id));
-            return redirect()->route('admin.dashboard')->with('success', 'Welcome back, Admin!');
-        }
-        return redirect('/');
+        return view('auth.forgot-password');
+    }
+
+    // 2. Process the email and send the link
+    public function sendResetLinkEmail(Request $request)
+    {
+        $request->validate(['email' => 'required|email|exists:users,email']);
+
+        $status = Password::sendResetLink(
+            $request->only('email')
+        );
+
+        return $status === Password::RESET_LINK_SENT
+                    ? back()->with(['success' => 'A password reset link has been sent to your email!'])
+                    : back()->withErrors(['email' => 'Unable to send reset link. Try again.']);
+    }
+
+    // 3. Show the actual reset password form (when they click the email link)
+    public function showResetForm(Request $request, $token = null)
+    {
+        return view('auth.reset-password')->with(
+            ['token' => $token, 'email' => $request->email]
+        );
+    }
+
+    // 4. Save the new password to the database
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token' => 'required',
+            'email' => 'required|email',
+            'password' => 'required|min:8|confirmed',
+        ]);
+
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                $user->forceFill([
+                    'password' => Hash::make($password)
+                ])->setRememberToken(Str::random(60));
+
+                $user->save();
+
+                event(new PasswordReset($user));
+            }
+        );
+
+        return $status === Password::PASSWORD_RESET
+                    ? redirect()->route('login')->with('success', 'Your password has been successfully reset! Please login.')
+                    : back()->withErrors(['email' => [__($status)]]);
     }
 }
